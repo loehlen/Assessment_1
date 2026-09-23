@@ -18,6 +18,7 @@ from shared import (
     apply_styles,
     case_card,
     page_header,
+    require_password,
     teaser,
 )
 
@@ -114,31 +115,10 @@ CHUNKS = {
 
 
 # --------------------------------------------------
-# Password
+# Password (shared with home.py: entering it once unlocks both pages)
 # --------------------------------------------------
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-
-if not st.session_state.authenticated:
-
-    page_header("Relevant Product Market Chatbot")
-    teaser("Enter the password to access the chatbot.")
-
-    password_input = st.text_input(
-        label="Password",
-        type="password",
-        placeholder="Enter password",
-    )
-
-    if password_input:
-        if password_input == os.environ["PASSWORD"]:
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-
-    st.stop()  # nothing below runs until the password is correct
+require_password("Relevant Product Market Chatbot")
 
 
 # --------------------------------------------------

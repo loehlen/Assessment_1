@@ -1,10 +1,15 @@
 """
 Shared building blocks for home.py and pages/chatbot.py:
-case details, AGLC citation formatting, the stylesheet and small
-HTML helpers. Change something here and both pages update.
+case details, AGLC citation formatting, the password gate, the
+stylesheet and small HTML helpers. Change something here and both pages update.
 """
 
+import os
+
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # --------------------------------------------------
@@ -63,6 +68,35 @@ def teaser(text):
     st.markdown(f'<div class="teaser">{text}</div>', unsafe_allow_html=True)
 
 
+def require_password(subtitle=None):
+    """Password gate shared by both pages. Once the password is
+    entered on either page, the whole app is unlocked for the rest of
+    the session. Nothing below the call runs until it is correct."""
+
+    if st.session_state.get("authenticated"):
+        return
+
+    st.title(CASE_TITLE)
+    if subtitle:
+        st.subheader(subtitle)
+    teaser("Enter the password to get started.")
+
+    password_input = st.text_input(
+        label="Password",
+        type="password",
+        placeholder="Enter password",
+    )
+
+    if password_input:
+        if password_input == os.environ["PASSWORD"]:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+
+    st.stop()
+
+
 def paragraph_reference(first, last=None):
     st.markdown(
         f'<div class="paragraph-reference">{aglc_pinpoint(first, last)}</div>',
@@ -76,15 +110,17 @@ def paragraph_reference(first, last=None):
 
 CSS = """
 <style>
-/* Main buttons */
-div.stButton > button {
+/* Main buttons (and download buttons, styled the same) */
+div.stButton > button,
+div.stDownloadButton > button {
     border: 1px solid #E8CDD4;
     border-radius: 8px;
     background-color: white;
     color: #30313D;
 }
 
-div.stButton > button:hover {
+div.stButton > button:hover,
+div.stDownloadButton > button:hover {
     border-color: #D8B3BE;
     background-color: #F5E6EA;
     color: #30313D;
@@ -103,10 +139,24 @@ div.stButton > button[kind="primary"]:hover {
     color: white;
 }
 
-/* Expanders */
-div[data-testid="stExpander"] {
-    border: 1px solid #E2D9DC;
+/* Expanders (click-to-open sections): pink outline, and a light
+   pink header when hovered or open, instead of Streamlit's grey */
+div[data-testid="stExpander"] details {
+    border: 1px solid #E8CDD4 !important;
     border-radius: 8px;
+}
+
+div[data-testid="stExpander"] summary:hover,
+div[data-testid="stExpander"] details[open] > summary {
+    background-color: #F5E6EA !important;
+}
+
+div[data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
+    color: #9B6574;
+}
+
+div[data-testid="stExpanderDetails"] {
+    border-color: #E8CDD4 !important;
 }
 
 /* Small paragraph references */
@@ -148,9 +198,20 @@ div[data-testid="stExpander"] {
     color: #9B6574;
 }
 
-/* Slim progress bar in the theme color */
-div[data-testid="stProgress"] div[role="progressbar"] > div {
+/* Intro progress bar: white with a pink outline, filling up pink */
+.intro-progress {
+    height: 12px;
+    background-color: white;
+    border: 1px solid #9B6574;
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 0.9rem 0;
+}
+
+.intro-progress-fill {
+    height: 100%;
     background-color: #9B6574;
+    border-radius: 999px;
 }
 
 /* Background/case-info card */

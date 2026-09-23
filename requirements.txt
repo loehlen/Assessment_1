@@ -72,6 +72,7 @@ python-dotenv==1.2.3
 python-multipart==0.0.32
 PyYAML==6.0.3
 referencing==0.37.0
+reportlab==5.0.1
 requests==2.34.2
 requests-oauthlib==2.0.0
 rich==15.0.0

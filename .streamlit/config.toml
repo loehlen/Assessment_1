@@ -1,0 +1,4 @@
+[theme]
+# Accent colour for Streamlit's own widgets (radio buttons, focus
+# rings, links), matching the pink used in shared.py
+primaryColor = "#9B6574"
