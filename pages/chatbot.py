@@ -9,6 +9,8 @@ How a question is answered
   3. The model answers from those chunks only, citing paragraphs
   4. A silent check finds uncited sentences and banned phrases,
      and corrects them in up to MAX_REVISIONS passes
+  5. Each citation in the answer becomes a label that shows the
+     paragraph text on hover (or tap)
 
 Sections
   1. Page setup and settings
@@ -84,8 +86,9 @@ WELCOME_MESSAGE = (
     f"{COVERED_PINPOINT}, or pick a question below to get started."
 )
 
-# The welcome message types itself out word by word, then the starter
-# questions appear one after another (first visit only). In seconds:
+# On the first visit, the welcome waits a moment, types itself out word
+# by word, then the starter questions appear one after another. In seconds:
+WELCOME_START_DELAY = 0.3
 WELCOME_WORD_DELAY = 0.04
 WELCOME_BUTTON_DELAY = 0.25
 
@@ -153,7 +156,7 @@ CHUNKS = {
 STARTER_QUESTIONS = [
     "What did the applicant argue about bananas and other fresh fruit?",
     "How did the Commission respond to the applicant's argument?",
-    "What did the Court decide about the relevant market?",
+    "What did the Court decide about the relevant product market?",
 ]
 
 
@@ -652,7 +655,7 @@ def answer_question(query):
         try:
             with st.spinner("Generating response..."):
                 answer = generate_answer(history, context, question_block)
-            st.write(answer)
+            render_answer(answer, sources)
             render_sources(sources, shown_query)
 
         except Exception:
@@ -675,6 +678,66 @@ def answer_question(query):
 # ==================================================
 # 7. Display helpers
 # ==================================================
+
+# The "[n]" marker at the start of each paragraph in a chunk
+PARAGRAPH_MARKER = re.compile(r"\[(\d+)\]")
+
+# A pinpoint in an answer: [29], or a range [28]–[30]
+PINPOINT_PATTERN = re.compile(r"\[(\d+)\](?:\s*[–-]\s*\[(\d+)\])?")
+
+
+def paragraph_texts(sources):
+    """{paragraph number: text} for every paragraph in the retrieved
+    chunks, split at the [n] marker that starts each one."""
+    texts = {}
+    for source in sources:
+        parts = PARAGRAPH_MARKER.split(source.get("doc", ""))
+        # parts = [text before the first marker, "10", text, "11", text, ...]
+        for number, text in zip(parts[1::2], parts[2::2]):
+            texts[int(number)] = " ".join(text.split())
+    return texts
+
+
+def popover_safe(text):
+    """Escape paragraph text for the hover box: HTML characters, plus
+    the ones Streamlit would otherwise read as italics, bold, code or
+    maths inside it."""
+    text = html.escape(text)
+    for char, entity in (("*", "&#42;"), ("_", "&#95;"), ("$", "&#36;"), ("`", "&#96;")):
+        text = text.replace(char, entity)
+    return text
+
+
+def render_answer(answer, sources):
+    """The answer text, with every pinpoint ([29] or [28]–[30]) turned
+    into a pink label that shows the paragraph text on hover or tap.
+    Pinpoints for paragraphs that weren't retrieved stay plain labels."""
+
+    texts = paragraph_texts(sources)
+
+    def to_label(match):
+        first = int(match.group(1))
+        last = int(match.group(2) or first)
+        pinpoint = match.group(0)
+
+        numbers = [n for n in range(first, last + 1) if n in texts]
+        if not numbers:
+            return f'<span class="cite">{pinpoint}</span>'
+
+        paragraphs = "".join(
+            f'<span class="cite-paragraph"><b>[{n}]</b> {popover_safe(texts[n])}</span>'
+            for n in numbers
+        )
+
+        return (
+            f'<span class="cite" tabindex="0">{pinpoint}'
+            f'<span class="cite-pop"><span class="cite-pop-inner">'
+            f"{paragraphs}"
+            f"</span></span></span>"
+        )
+
+    render_html(PINPOINT_PATTERN.sub(to_label, answer))
+
 
 def first_paragraph(source):
     """The first paragraph number of a source, e.g. 12 for [12]–[13],
@@ -718,16 +781,17 @@ def render_sources(sources, search_query=None):
 
 
 def show_past_message(message):
-    """Replay one stored message, including the retrieved-chunks
-    expander for past assistant answers."""
+    """Replay one stored message: past answers get their citation
+    labels and sources expander again."""
 
     avatar = USER_AVATAR if message["role"] == "user" else ASSISTANT_AVATAR
 
     with st.chat_message(message["role"], avatar=avatar):
-        st.write(message["content"])
-
         if message["role"] == "assistant" and message.get("sources"):
+            render_answer(message["content"], message["sources"])
             render_sources(message["sources"], message.get("search_query"))
+        else:
+            st.write(message["content"])
 
 
 def type_out(text):
@@ -743,11 +807,16 @@ def show_welcome():
     with the starter questions underneath as possible replies.
     Clicking one asks it straight away.
 
-    On the first visit the message types itself out and the questions
-    appear one after another; after that (every later rerun), it all
-    shows at once, so the animation doesn't replay on every click."""
+    On the first visit there's a short pause, then the message types
+    itself out and the questions appear one after another; after that
+    (every later rerun), it all shows at once, so the animation doesn't
+    replay on every click."""
 
     animate = not st.session_state.welcome_shown
+
+    if animate:
+        # Let the page settle (e.g. the password screen clear) first
+        time.sleep(WELCOME_START_DELAY)
 
     with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         if animate:
@@ -795,11 +864,17 @@ if not query and st.session_state.pending_query:
 
 # Before the first question: full header, welcome message and starter
 # questions. Once a conversation is under way: a one-line header only.
-if st.session_state.messages or query:
-    compact_header(CHATBOT_SUBTITLE)
-else:
-    page_header(CHATBOT_SUBTITLE)
-    show_welcome()
+# Everything sits in one placeholder, which is cleared the moment the
+# script reaches it, so the welcome disappears as soon as a question is
+# asked, instead of lingering until the answer is ready.
+top = st.empty()
+
+with top.container():
+    if st.session_state.messages or query:
+        compact_header(CHATBOT_SUBTITLE)
+    else:
+        page_header(CHATBOT_SUBTITLE)
+        show_welcome()
 
 for message in st.session_state.messages:
     show_past_message(message)

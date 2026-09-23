@@ -83,28 +83,36 @@ def setup_page(page_title, password_subtitle=None):
 def require_password(subtitle=None):
     """Password gate shared by both pages. Once the password is
     entered on either page, the whole app is unlocked for the rest of
-    the session. Nothing below the call runs until it is correct."""
+    the session. Nothing below the call runs until it is correct.
+
+    The gate sits in a placeholder that is created on every run, even
+    once unlocked: the empty placeholder then wipes the old password
+    screen straight away, instead of leaving it faded on screen while
+    the page underneath loads."""
+
+    gate = st.empty()
 
     if st.session_state.get("authenticated"):
         return
 
-    st.title(HEADING_TITLE)
-    if subtitle:
-        st.subheader(subtitle)
-    teaser("Enter the password to get started.")
+    with gate.container():
+        st.title(HEADING_TITLE)
+        if subtitle:
+            st.subheader(subtitle)
+        teaser("Enter the password to get started.")
 
-    password_input = st.text_input(
-        label="Password",
-        type="password",
-        placeholder="Enter password",
-    )
+        password_input = st.text_input(
+            label="Password",
+            type="password",
+            placeholder="Enter password",
+        )
 
-    if password_input:
-        if password_input == os.environ["PASSWORD"]:
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
+        if password_input:
+            if password_input == os.environ["PASSWORD"]:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
 
     st.stop()
 
@@ -397,6 +405,90 @@ div[data-testid="stChatMessage"] > div:first-child {
     font-weight: 600;
 }
 
+/* --------------------------------------------------
+   Citations in chatbot answers: a small pink label that
+   opens the paragraph text on hover, or on tap (the label
+   is focusable, so tapping it on a phone opens it too).
+   -------------------------------------------------- */
+
+.cite {
+    position: relative;
+    display: inline-block;
+    padding: 0 0.3rem;
+    border-radius: 5px;
+    background-color: var(--tint);
+    color: var(--accent);
+    font-size: 0.88em;
+    font-weight: 600;
+    line-height: 1.5;
+    text-indent: 0;
+    cursor: pointer;
+    outline: none;
+}
+
+.cite:hover,
+.cite:focus {
+    background-color: var(--accent);
+    color: white;
+}
+
+/* The box sits just above the label. Its transparent bottom padding
+   bridges the gap, so moving the mouse up onto it keeps it open. */
+.cite-pop {
+    display: none;
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    z-index: 1000;
+    width: min(440px, 75vw);
+    padding-bottom: 6px;
+    cursor: auto;
+}
+
+.cite:hover .cite-pop,
+.cite:focus .cite-pop,
+.cite:focus-within .cite-pop {
+    display: block;
+}
+
+.cite-pop-inner {
+    display: block;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 0.7rem 0.9rem;
+    background-color: white;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(48, 49, 61, 0.14);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 400;
+    line-height: 1.55;
+    text-align: justify;
+    text-justify: inter-word;
+    white-space: normal;
+}
+
+.cite-pop-inner .cite-speaker {
+    display: block;
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-bottom: 0.2rem;
+}
+
+.cite-pop-inner .cite-paragraph {
+    display: block;
+}
+
+.cite-pop-inner .cite-paragraph + .cite-paragraph {
+    margin-top: 0.6rem;
+}
+
+.cite-pop-inner b {
+    color: var(--accent);
+}
+
 /* Retrieved-chunk cards inside the chatbot's "sources" expander */
 .chunk-card {
     background-color: var(--card);
@@ -467,19 +559,13 @@ div[data-testid="stChatInput"] button svg {
     color: white !important;
 }
 
-/* Justified ("Blocksatz") body text throughout the app ... */
+/* Justified ("Blocksatz") body text throughout the app, chat included */
 [data-testid="stMarkdownContainer"] p,
 .case-card,
 .teaser,
 .conclusion-box {
     text-align: justify;
     text-justify: inter-word;
-}
-
-/* ... except in chat messages: the bubbles are narrower, and
-   justified text there leaves wide gaps between words */
-[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] p {
-    text-align: left;
 }
 """
 
