@@ -1,7 +1,13 @@
 """
-Shared building blocks for home.py and pages/chatbot.py:
-case details, AGLC citation formatting, the password gate, the
-stylesheet and small HTML helpers. Change something here and both pages update.
+Shared building blocks for home.py and pages/chatbot.py.
+Change something here and both pages update.
+
+Contents
+  1. Case details and page names
+  2. AGLC citations
+  3. Page setup, session state and navigation
+  4. Small HTML helpers
+  5. Colours and stylesheet
 """
 
 import os
@@ -12,19 +18,33 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-# --------------------------------------------------
-# Case details
-# --------------------------------------------------
+# ==================================================
+# 1. Case details and page names
+# ==================================================
 
 CASE_TITLE = "United Brands v Commission"
-CASE_NAME = "United Brands v Commission (Case 27/76)"
+CASE_NAME = f"{CASE_TITLE} (Case 27/76)"
 CASE_CITATION = "27/76, United Brands Co. v Commission (14 February 1978)"
 PAGE_ICON = "⚖️"
 
+# On-screen headings only; CASE_TITLE stays plain for the PDF and
+# citations (the PDF's font can't draw emoji)
+HEADING_TITLE = f"{CASE_TITLE} 🍌"
 
-# --------------------------------------------------
-# Citation style (AGLC)
-# --------------------------------------------------
+# The part of the judgment the app covers
+FIRST_PARAGRAPH, LAST_PARAGRAPH = 10, 35
+COVERED_PARAGRAPHS = f"paragraphs {FIRST_PARAGRAPH}–{LAST_PARAGRAPH}"
+
+# Pages and their subtitles
+HOME_PAGE = "home.py"
+CHATBOT_PAGE = "pages/chatbot.py"
+INTRO_SUBTITLE = "Understanding the Relevant Product Market"
+CHATBOT_SUBTITLE = "Relevant Product Market Chatbot"
+
+
+# ==================================================
+# 2. AGLC citations
+# ==================================================
 
 EN_DASH = "\u2013"
 
@@ -37,35 +57,27 @@ def aglc_pinpoint(first, last=None):
     return f"[{first}]{EN_DASH}[{last}]"
 
 
-EXCERPT = (
-    'Chapter I, Section 1 — "The relevant market" '
-    f"{aglc_pinpoint(10, 35)}"
-)
+def cite(text, first, last=None):
+    """A sentence followed by its AGLC pinpoint, e.g. 'text [12]'."""
+    return f"{text} {aglc_pinpoint(first, last)}"
 
 
-# --------------------------------------------------
-# Small HTML helpers
-# --------------------------------------------------
+COVERED_PINPOINT = aglc_pinpoint(FIRST_PARAGRAPH, LAST_PARAGRAPH)  # [10]–[35]
 
-def page_header(subtitle):
-    st.title(CASE_TITLE)
-    st.subheader(subtitle)
+EXCERPT = f'Chapter I, Section 1 — "The relevant market" {COVERED_PINPOINT}'
 
 
-def case_card(excerpt_label="This excerpt"):
-    st.markdown(
-        f"""
-        <div class="case-card">
-            <div class="case-row"><span class="case-label">Case</span><span>{CASE_CITATION}</span></div>
-            <div class="case-row"><span class="case-label">{excerpt_label}</span><span>{EXCERPT}</span></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+# ==================================================
+# 3. Page setup, session state and navigation
+# ==================================================
 
-
-def teaser(text):
-    st.markdown(f'<div class="teaser">{text}</div>', unsafe_allow_html=True)
+def setup_page(page_title, password_subtitle=None):
+    """Call first thing on every page: browser-tab title and icon, the
+    app's styles, then the password gate. Nothing below the call runs
+    until the password is correct."""
+    st.set_page_config(page_title=page_title, page_icon=PAGE_ICON)
+    apply_styles()
+    require_password(password_subtitle)
 
 
 def require_password(subtitle=None):
@@ -76,7 +88,7 @@ def require_password(subtitle=None):
     if st.session_state.get("authenticated"):
         return
 
-    st.title(CASE_TITLE)
+    st.title(HEADING_TITLE)
     if subtitle:
         st.subheader(subtitle)
     teaser("Enter the password to get started.")
@@ -97,78 +109,194 @@ def require_password(subtitle=None):
     st.stop()
 
 
-def paragraph_reference(first, last=None):
-    st.markdown(
-        f'<div class="paragraph-reference">{aglc_pinpoint(first, last)}</div>',
-        unsafe_allow_html=True,
+def init_state(**defaults):
+    """Give session-state keys their starting value on the first run
+    only; later runs keep whatever is stored."""
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def go_home():
+    st.switch_page(HOME_PAGE)
+
+
+def go_to_chatbot(question=None):
+    """Open the chatbot; if a question is given, it is asked there
+    straight away (after the password, if not yet entered)."""
+    if question:
+        st.session_state.pending_query = question
+    st.switch_page(CHATBOT_PAGE)
+
+
+# ==================================================
+# 4. Small HTML helpers
+# ==================================================
+
+def render_html(markup):
+    st.markdown(markup, unsafe_allow_html=True)
+
+
+def page_header(subtitle):
+    st.title(HEADING_TITLE)
+    st.subheader(subtitle)
+
+
+def compact_header(subtitle):
+    """One-line header for once a conversation is under way, so the
+    full title and case card don't push the chat down."""
+    render_html(
+        f'<div class="compact-header">'
+        f'<span class="compact-title">{HEADING_TITLE}</span>'
+        f'<span class="compact-subtitle">{subtitle} · {COVERED_PINPOINT}</span>'
+        f"</div>"
     )
 
 
-# --------------------------------------------------
-# Stylesheet
-# --------------------------------------------------
+def case_card(excerpt_label="This excerpt"):
+    render_html(
+        f"""
+        <div class="case-card">
+            <div class="case-row"><span class="case-label">Case</span><span>{CASE_CITATION}</span></div>
+            <div class="case-row"><span class="case-label">{excerpt_label}</span><span>{EXCERPT}</span></div>
+        </div>
+        """
+    )
 
-CSS = """
-<style>
-/* Main buttons (and download buttons, styled the same) */
-div.stButton > button,
-div.stDownloadButton > button {
-    border: 1px solid #E8CDD4;
-    border-radius: 8px;
-    background-color: white;
-    color: #30313D;
+
+def teaser(*paragraphs, align_left=False):
+    """One or more hook lines. align_left=True suits short lines,
+    where justified text leaves wide gaps."""
+    style = ' style="text-align: left;"' if align_left else ""
+    render_html(
+        "".join(f'<div class="teaser"{style}>{text}</div>' for text in paragraphs)
+    )
+
+
+def muted_note(text):
+    """Small grey line, e.g. a paragraph reference or 'Searched for: …'."""
+    render_html(f'<div class="paragraph-reference">{text}</div>')
+
+
+def paragraph_reference(first, last=None):
+    muted_note(aglc_pinpoint(first, last))
+
+
+# ==================================================
+# 5. Colours and stylesheet
+#
+# Every colour is defined once here. The stylesheet uses them as
+# CSS variables (var(--accent)); home.py uses them for the PDF.
+# ==================================================
+
+PALETTE = {
+    "accent": "#9B6574",         # primary buttons, labels, focus rings
+    "accent-dark": "#85525F",    # accent on hover
+    "tint": "#F8F0F2",           # hovered / open / highlighted backgrounds
+    "nav-highlight": "#F3EAED",  # current page in the sidebar
+    "border": "#EEE2E6",         # buttons and expanders
+    "border-hover": "#E3D2D8",
+    "card": "#FCF9FA",           # cards and the user's chat bubble
+    "card-border": "#ECE5E8",
+    "text": "#30313D",
+    "text-soft": "#4A4A52",      # teaser lines
+    "muted": "#8A7C81",          # small notes and references
 }
 
-div.stButton > button:hover,
-div.stDownloadButton > button:hover {
-    border-color: #D8B3BE;
-    background-color: #F5E6EA;
-    color: #30313D;
+CSS_VARIABLES = (
+    ":root {\n"
+    + "".join(f"    --{name}: {value};\n" for name, value in PALETTE.items())
+    + "}\n"
+)
+
+STYLESHEET = """
+/* Main buttons (and download buttons, styled the same) */
+div.stButton button,
+div.stDownloadButton button {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background-color: white;
+    color: var(--text);
+}
+
+div.stButton button:hover,
+div.stDownloadButton button:hover {
+    border-color: var(--border-hover);
+    background-color: var(--tint);
+    color: var(--text);
+}
+
+/* Pressed / just-clicked / keyboard-focused buttons keep the same
+   subtle tint (some Streamlit versions use a strong pink here) */
+div.stButton button:not([kind="primary"]):active,
+div.stButton button:not([kind="primary"]):focus,
+div.stButton button:not([kind="primary"]):focus-visible,
+div.stDownloadButton button:active,
+div.stDownloadButton button:focus,
+div.stDownloadButton button:focus-visible {
+    border-color: var(--border-hover) !important;
+    background-color: var(--tint) !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+div.stButton button:not([kind="primary"]):focus:not(:hover):not(:active),
+div.stDownloadButton button:focus:not(:hover):not(:active) {
+    background-color: white !important;
+    border-color: var(--border) !important;
 }
 
 /* Primary button */
-div.stButton > button[kind="primary"] {
-    border: 1px solid #9B6574;
-    background-color: #9B6574;
+div.stButton button[kind="primary"] {
+    border: 1px solid var(--accent);
+    background-color: var(--accent);
     color: white;
 }
 
-div.stButton > button[kind="primary"]:hover {
-    border-color: #85525F;
-    background-color: #85525F;
+div.stButton button[kind="primary"]:hover {
+    border-color: var(--accent-dark);
+    background-color: var(--accent-dark);
     color: white;
 }
 
 /* Expanders (click-to-open sections): pink outline, and a light
    pink header when hovered or open, instead of Streamlit's grey */
 div[data-testid="stExpander"] details {
-    border: 1px solid #E8CDD4 !important;
+    border: 1px solid var(--border) !important;
     border-radius: 8px;
 }
 
 div[data-testid="stExpander"] summary:hover,
 div[data-testid="stExpander"] details[open] > summary {
-    background-color: #F5E6EA !important;
+    background-color: var(--tint) !important;
 }
 
 div[data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
-    color: #9B6574;
+    color: var(--accent);
 }
 
 div[data-testid="stExpanderDetails"] {
-    border-color: #E8CDD4 !important;
+    border-color: var(--border) !important;
 }
 
-/* Small paragraph references */
+/* Sidebar page links: soft highlight for the current page
+   (Streamlit's default is a strong pink derived from the accent) */
+a[data-testid="stSidebarNavLink"][aria-current="page"],
+a[data-testid="stSidebarNavLink"]:hover {
+    background-color: var(--nav-highlight) !important;
+}
+
+/* Small paragraph references and notes */
 .paragraph-reference {
-    color: #8A7C81;
+    color: var(--muted);
     font-size: 0.85rem;
     margin-top: 0.2rem;
 }
 
 /* Step progress indicator */
 .step-indicator {
-    color: #9B6574;
+    color: var(--accent);
     font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: 0.05em;
@@ -179,30 +307,30 @@ div[data-testid="stExpanderDetails"] {
 /* Hook / teaser line */
 .teaser {
     font-size: 1.02rem;
-    color: #4A4A52;
+    color: var(--text-soft);
     margin-bottom: 0.6rem;
 }
 
 /* Conclusion / court-holding box */
 .conclusion-box {
-    background-color: #F5E6EA;
-    border: 1px solid #E8CDD4;
-    border-left: 4px solid #9B6574;
+    background-color: var(--tint);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
     border-radius: 8px;
     padding: 1rem 1.2rem;
-    color: #30313D;
+    color: var(--text);
     margin: 1rem 0;
 }
 
 .conclusion-box strong {
-    color: #9B6574;
+    color: var(--accent);
 }
 
 /* Intro progress bar: white with a pink outline, filling up pink */
 .intro-progress {
     height: 12px;
     background-color: white;
-    border: 1px solid #9B6574;
+    border: 1px solid var(--accent);
     border-radius: 999px;
     overflow: hidden;
     margin: 0.9rem 0;
@@ -210,14 +338,14 @@ div[data-testid="stExpanderDetails"] {
 
 .intro-progress-fill {
     height: 100%;
-    background-color: #9B6574;
+    background-color: var(--accent);
     border-radius: 999px;
 }
 
 /* Background/case-info card */
 .case-card {
-    background-color: #FAF6F7;
-    border: 1px solid #E2D9DC;
+    background-color: var(--card);
+    border: 1px solid var(--card-border);
     border-radius: 8px;
     padding: 1rem 1.2rem;
     margin: 0.8rem 0 1.2rem 0;
@@ -231,23 +359,56 @@ div[data-testid="stExpanderDetails"] {
 }
 
 .case-card .case-label {
-    color: #9B6574;
+    color: var(--accent);
     font-weight: 600;
     min-width: 110px;
 }
 
+/* Chat: the user's questions in a subtle pink bubble (Streamlit
+   hard-codes a grey one), and pink rings around the avatars */
+div[data-testid="stChatMessage"]:has([aria-label="Chat message from user"]) {
+    background-color: var(--card);
+}
+
+div[data-testid="stChatMessage"] > div:first-child {
+    border-color: var(--border) !important;
+}
+
+/* One-line chatbot header, shown once a conversation has started */
+.compact-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3rem 0.8rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1rem;
+}
+
+.compact-header .compact-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.compact-header .compact-subtitle {
+    font-size: 0.95rem;
+    color: var(--accent);
+    font-weight: 600;
+}
+
 /* Retrieved-chunk cards inside the chatbot's "sources" expander */
 .chunk-card {
-    background-color: #FAF6F7;
-    border: 1px solid #E2D9DC;
-    border-left: 3px solid #9B6574;
+    background-color: var(--card);
+    border: 1px solid var(--card-border);
+    border-left: 3px solid var(--accent);
     border-radius: 8px;
     padding: 0.7rem 1rem;
     margin-bottom: 0.6rem;
 }
 
 .chunk-card .chunk-title {
-    color: #9B6574;
+    color: var(--accent);
     font-weight: 600;
     font-size: 0.9rem;
     margin-bottom: 0.2rem;
@@ -262,7 +423,7 @@ div[data-testid="stExpanderDetails"] {
 
 div[data-testid="stChatInput"],
 div[data-testid="stTextInput"] > div {
-    border-color: #E2D9DC !important;
+    border-color: var(--card-border) !important;
     box-shadow: none !important;
 }
 
@@ -270,8 +431,8 @@ div[data-testid="stChatInput"]:hover,
 div[data-testid="stChatInput"]:focus-within,
 div[data-testid="stTextInput"] > div:hover,
 div[data-testid="stTextInput"] > div:focus-within {
-    border-color: #9B6574 !important;
-    box-shadow: 0 0 0 1px #9B6574 !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 1px var(--accent) !important;
 }
 
 div[data-testid="stChatInput"] *,
@@ -283,21 +444,21 @@ div[data-testid="stTextInput"] * {
 
 div[data-testid="stChatInput"] textarea,
 div[data-testid="stTextInput"] input {
-    caret-color: #9B6574 !important;
+    caret-color: var(--accent) !important;
 }
 
 /* Chat input submit (arrow) button keeps its own solid fill */
 div[data-testid="stChatInput"] button {
-    background-color: #9B6574 !important;
-    border-color: #9B6574 !important;
+    background-color: var(--accent) !important;
+    border-color: var(--accent) !important;
     color: white !important;
 }
 
 div[data-testid="stChatInput"] button:hover,
 div[data-testid="stChatInput"] button:focus,
 div[data-testid="stChatInput"] button:active {
-    background-color: #85525F !important;
-    border-color: #85525F !important;
+    background-color: var(--accent-dark) !important;
+    border-color: var(--accent-dark) !important;
     color: white !important;
 }
 
@@ -306,8 +467,7 @@ div[data-testid="stChatInput"] button svg {
     color: white !important;
 }
 
-/* Justified ("Blocksatz") body text throughout the app */
-[data-testid="stChatMessageContent"] p,
+/* Justified ("Blocksatz") body text throughout the app ... */
 [data-testid="stMarkdownContainer"] p,
 .case-card,
 .teaser,
@@ -315,9 +475,16 @@ div[data-testid="stChatInput"] button svg {
     text-align: justify;
     text-justify: inter-word;
 }
-</style>
+
+/* ... except in chat messages: the bubbles are narrower, and
+   justified text there leaves wide gaps between words */
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] p {
+    text-align: left;
+}
 """
+
+CSS = f"\n<style>\n{CSS_VARIABLES}{STYLESHEET}</style>\n"
 
 
 def apply_styles():
-    st.markdown(CSS, unsafe_allow_html=True)
+    render_html(CSS)

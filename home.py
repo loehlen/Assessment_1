@@ -1,3 +1,21 @@
+"""
+Intro page: a short step-by-step introduction to the case, followed
+by a link to the chatbot.
+
+The content is written once (STEPS) and used in three places: the
+individual steps, the "whole introduction" summary on the last step,
+and the downloadable PDF. So the PDF never contains anything the app
+doesn't show.
+
+Sections
+  1. Page setup
+  2. Intro content (STEPS)
+  3. Showing a step
+  4. The guess (step 2) and the reveal (last step)
+  5. PDF
+  6. Page flow: sidebar, welcome screen, current step, navigation
+"""
+
 import io
 from xml.sax.saxutils import escape
 
@@ -21,59 +39,55 @@ from reportlab.platypus import (
 from shared import (
     CASE_CITATION,
     CASE_TITLE,
+    COVERED_PINPOINT,
     EXCERPT,
-    PAGE_ICON,
-    aglc_pinpoint,
-    apply_styles,
+    HEADING_TITLE,
+    INTRO_SUBTITLE,
+    PALETTE,
     case_card,
+    cite,
+    go_to_chatbot,
+    init_state,
     page_header,
-    require_password,
+    render_html,
+    setup_page,
     teaser,
 )
 
-st.set_page_config(page_title="United Brands v Commission", page_icon=PAGE_ICON)
-apply_styles()
-require_password()  # nothing below runs until the password is correct
 
+# ==================================================
+# 1. Page setup
+# ==================================================
 
-CHATBOT_PAGE = "pages/chatbot.py"
-PAGE_SUBTITLE = "Understanding the Relevant Product Market"
+setup_page(CASE_TITLE)  # nothing below runs until the password is correct
+
 PDF_FILE_NAME = "United_Brands_relevant_product_market_introduction.pdf"
 
 
-def cite(text, first, last=None):
-    """A sentence followed by its AGLC pinpoint, e.g. 'text [12]'."""
-    return f"{text} {aglc_pinpoint(first, last)}"
-
-
-# --------------------------------------------------
-# Intro content
+# ==================================================
+# 2. Intro content
 #
-# Written once and used in three places: the individual steps,
-# the "Read the full introduction" summary on the last step, and
-# the PDF. So the PDF never contains anything the app doesn't show.
+# Each step has:
+#   title    shown in the step indicator and as the heading
+#   teaser   optional hook line (on screen only)
+#   ask      optional question sent to the chatbot by the step's
+#            button; leave it out for content the chatbot can't
+#            answer (the background)
+#   blocks   the content, shown in order
 #
-# Each step has a "title", a "teaser" (hook line, step only), an
-# "ask" question (sent to the chatbot by the step's button) and a
-# list of "blocks", shown in order. Block types:
-#
-# "teaser" is optional too.
-#
-#   background   uncited context, the case card and a note
-#   text         a short visible paragraph
-#   box          highlighted box: label, text and optional bullets
-#   label        a small bold heading
-#   points       bullet points, each (bold lead, text)
-#   details      click to open: label, and paragraphs and/or an
-#                "intro" line followed by "bullets"
-#   side_by_side two click-to-open sections next to each other
-#
-# "ask" is optional: leave it out for content the chatbot can't
-# answer (the background).
+# Block types:
+#   background    uncited context, the case card and a note
+#   text          a short visible paragraph
+#   box           highlighted box: label, text and optional bullets
+#   label         a small bold heading
+#   points        bullet points, each (bold lead, text)
+#   details       click to open: label, and paragraphs and/or an
+#                 "intro" line followed by "bullets"
+#   side_by_side  two click-to-open sections next to each other
 #
 # Every sentence reporting the judgment opens with its source and
 # ends with a pinpoint, following the chatbot's own rules.
-# --------------------------------------------------
+# ==================================================
 
 STEPS = [
 
@@ -92,7 +106,7 @@ STEPS = [
                     "Court of Justice to annul that decision."
                 ),
                 "note": (
-                    f"Background from outside {aglc_pinpoint(10, 35)}; "
+                    f"Background from outside {COVERED_PINPOINT}; "
                     "the chatbot does not cover it."
                 ),
             },
@@ -292,17 +306,9 @@ GUESS_OPTIONS = ["A. The fresh fruit market", "B. A separate banana market"]
 CORRECT_GUESS = GUESS_OPTIONS[1]
 
 
-# --------------------------------------------------
-# Rendering in the app
-# --------------------------------------------------
-
-def go_to_chatbot(question=None):
-    """Open the chatbot; if a question is given, it is asked there
-    straight away (after the password, if not yet entered)."""
-    if question:
-        st.session_state.pending_query = question
-    st.switch_page(CHATBOT_PAGE)
-
+# ==================================================
+# 3. Showing a step
+# ==================================================
 
 def render_details_body(item):
     for paragraph in item.get("paragraphs", []):
@@ -324,6 +330,20 @@ def render_details(item, compact):
             render_details_body(item)
 
 
+def render_box(block):
+    bullets = ""
+    if block.get("bullets"):
+        bullets = (
+            '<ul style="margin: 0.4rem 0 0 0;">'
+            + "".join(f"<li>{bullet}</li>" for bullet in block["bullets"])
+            + "</ul>"
+        )
+    render_html(
+        f'<div class="conclusion-box"><strong>{block["label"]}:</strong> '
+        f"{block['text']}{bullets}</div>"
+    )
+
+
 def render_block(block, compact):
     kind = block["type"]
 
@@ -336,18 +356,7 @@ def render_block(block, compact):
         st.write(block["text"])
 
     elif kind == "box":
-        bullets = ""
-        if block.get("bullets"):
-            bullets = (
-                '<ul style="margin: 0.4rem 0 0 0;">'
-                + "".join(f"<li>{bullet}</li>" for bullet in block["bullets"])
-                + "</ul>"
-            )
-        st.markdown(
-            f'<div class="conclusion-box"><strong>{block["label"]}:</strong> '
-            f"{block['text']}{bullets}</div>",
-            unsafe_allow_html=True,
-        )
+        render_box(block)
 
     elif kind == "label":
         st.markdown(f"**{block['text']}**")
@@ -378,15 +387,20 @@ def render_step(step_data, compact=False):
         render_block(block, compact)
 
 
+def step_indicator(step, title):
+    render_html(
+        f'<div class="step-indicator">Step {step} of {TOTAL_STEPS} · {title}</div>'
+    )
+
+
 def progress_bar(fraction):
     """Pink-outlined bar that fills up pink step by step (styled by
     .intro-progress in shared.py; replaces st.progress, whose colours
     can't be set reliably)."""
-    st.markdown(
+    render_html(
         '<div class="intro-progress">'
         f'<div class="intro-progress-fill" style="width: {fraction:.0%};"></div>'
-        "</div>",
-        unsafe_allow_html=True,
+        "</div>"
     )
 
 
@@ -399,16 +413,12 @@ def ask_button(step_data):
         go_to_chatbot(step_data["ask"])
 
 
-# --------------------------------------------------
-# The guess (step 2) and its answer (last step)
+# ==================================================
+# 4. The guess (step 2) and the reveal (last step)
 #
-# Stored under its own key, because Streamlit forgets a widget's
-# value once the widget is no longer on screen.
-# --------------------------------------------------
-
-if "market_guess" not in st.session_state:
-    st.session_state.market_guess = None
-
+# The guess is stored under its own key, because Streamlit forgets
+# a widget's value once the widget is no longer on screen.
+# ==================================================
 
 def save_guess():
     st.session_state.market_guess = st.session_state.guess_widget
@@ -428,13 +438,6 @@ def guess_question():
     )
     if st.session_state.market_guess:
         teaser("Noted. The last step reveals the answer.")
-
-
-if "answer_revealed" not in st.session_state:
-    st.session_state.answer_revealed = False
-
-if "celebrate" not in st.session_state:
-    st.session_state.celebrate = False
 
 
 def reveal_answer():
@@ -473,41 +476,41 @@ def celebrate_if_due():
         st.session_state.celebrate = False
 
 
-# --------------------------------------------------
-# PDF — built from the same STEPS content
-# --------------------------------------------------
+# ==================================================
+# 5. PDF — built from the same STEPS content
+# ==================================================
 
-ACCENT = colors.HexColor("#9B6574")
-ACCENT_LIGHT = colors.HexColor("#F5E6EA")
-CARD_BACKGROUND = colors.HexColor("#FAF6F7")
-BORDER = colors.HexColor("#E2D9DC")
-TEXT = colors.HexColor("#30313D")
-MUTED = colors.HexColor("#8A7C81")
+PDF_ACCENT = colors.HexColor(PALETTE["accent"])
+PDF_TINT = colors.HexColor(PALETTE["tint"])
+PDF_CARD = colors.HexColor(PALETTE["card"])
+PDF_BORDER = colors.HexColor(PALETTE["card-border"])
+PDF_TEXT = colors.HexColor(PALETTE["text"])
+PDF_MUTED = colors.HexColor(PALETTE["muted"])
 
 PDF_STYLES = {
     "title": ParagraphStyle(
         "title", fontName="Helvetica-Bold", fontSize=20, leading=24,
-        textColor=TEXT, spaceAfter=4,
+        textColor=PDF_TEXT, spaceAfter=4,
     ),
     "subtitle": ParagraphStyle(
         "subtitle", fontName="Helvetica", fontSize=13, leading=17,
-        textColor=ACCENT, spaceAfter=14,
+        textColor=PDF_ACCENT, spaceAfter=14,
     ),
     "heading": ParagraphStyle(
         "heading", fontName="Helvetica-Bold", fontSize=13.5, leading=17,
-        textColor=ACCENT, spaceBefore=14, spaceAfter=6, keepWithNext=1,
+        textColor=PDF_ACCENT, spaceBefore=14, spaceAfter=6, keepWithNext=1,
     ),
     "label": ParagraphStyle(
         "label", fontName="Helvetica-Bold", fontSize=10.5, leading=14,
-        textColor=TEXT, spaceBefore=4, spaceAfter=3, keepWithNext=1,
+        textColor=PDF_TEXT, spaceBefore=4, spaceAfter=3, keepWithNext=1,
     ),
     "body": ParagraphStyle(
         "body", fontName="Helvetica", fontSize=10.5, leading=15,
-        textColor=TEXT, alignment=TA_JUSTIFY, spaceAfter=6,
+        textColor=PDF_TEXT, alignment=TA_JUSTIFY, spaceAfter=6,
     ),
     "note": ParagraphStyle(
         "note", fontName="Helvetica", fontSize=8.5, leading=11.5,
-        textColor=MUTED, spaceAfter=6,
+        textColor=PDF_MUTED, spaceAfter=6,
     ),
 }
 
@@ -521,7 +524,7 @@ def pdf_panel(flowables, background, left_border=None):
     table = Table([[flowables]], colWidths=["100%"])
     commands = [
         ("BACKGROUND", (0, 0), (-1, -1), background),
-        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("BOX", (0, 0), (-1, -1), 0.6, PDF_BORDER),
         ("LEFTPADDING", (0, 0), (-1, -1), 9),
         ("RIGHTPADDING", (0, 0), (-1, -1), 9),
         ("TOPPADDING", (0, 0), (-1, -1), 7),
@@ -537,7 +540,7 @@ def pdf_bullets(paragraphs):
     return ListFlowable(
         [ListItem(paragraph, leftIndent=12) for paragraph in paragraphs],
         bulletType="bullet",
-        bulletColor=ACCENT,
+        bulletColor=PDF_ACCENT,
         bulletFontSize=9,
         leftIndent=12,
     )
@@ -549,28 +552,42 @@ def pdf_details(item):
     if item.get("intro"):
         flowables.append(pdf_text(item["intro"]))
     if item.get("bullets"):
-        flowables.append(pdf_bullets(
-            [pdf_text(bullet) for bullet in item["bullets"]]
-        ))
-    return pdf_panel(flowables, CARD_BACKGROUND)
+        flowables.append(pdf_bullets([pdf_text(b) for b in item["bullets"]]))
+    return pdf_panel(flowables, PDF_CARD)
+
+
+def pdf_case_card():
+    rows = [
+        [pdf_text("Case", "label"), pdf_text(CASE_CITATION)],
+        [pdf_text("This excerpt", "label"), pdf_text(EXCERPT)],
+    ]
+    table = Table(rows, colWidths=[28 * mm, None])
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return pdf_panel([table], PDF_CARD)
+
+
+def pdf_box(block):
+    flowables = [Paragraph(
+        f'<font color="{PALETTE["accent"]}"><b>{escape(block["label"])}:</b>'
+        f"</font> {escape(block['text'])}",
+        PDF_STYLES["body"],
+    )]
+    if block.get("bullets"):
+        flowables.append(pdf_bullets([pdf_text(b) for b in block["bullets"]]))
+    return pdf_panel(flowables, PDF_TINT, left_border=PDF_ACCENT)
 
 
 def pdf_block(block):
+    """The PDF version of one content block, as a list of flowables."""
     kind = block["type"]
 
     if kind == "background":
-        case_rows = [
-            [pdf_text("Case", "label"), pdf_text(CASE_CITATION)],
-            [pdf_text("This excerpt", "label"), pdf_text(EXCERPT)],
-        ]
-        case_table = Table(case_rows, colWidths=[28 * mm, None])
-        case_table.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ]))
         return [
             pdf_text(block["text"]),
-            pdf_panel([case_table], CARD_BACKGROUND),
+            pdf_case_card(),
             pdf_text(block["note"], "note"),
         ]
 
@@ -578,25 +595,14 @@ def pdf_block(block):
         return [pdf_text(block["text"])]
 
     if kind == "box":
-        flowables = [Paragraph(
-            f'<font color="#9B6574"><b>{escape(block["label"])}:</b>'
-            f"</font> {escape(block['text'])}",
-            PDF_STYLES["body"],
-        )]
-        if block.get("bullets"):
-            flowables.append(pdf_bullets(
-                [pdf_text(bullet) for bullet in block["bullets"]]
-            ))
-        return [pdf_panel(flowables, ACCENT_LIGHT, left_border=ACCENT)]
+        return [pdf_box(block)]
 
     if kind == "label":
         return [pdf_text(block["text"], "label")]
 
     if kind == "points":
         return [pdf_bullets([
-            Paragraph(
-                f"<b>{escape(lead)}</b> {escape(text)}", PDF_STYLES["body"]
-            )
+            Paragraph(f"<b>{escape(lead)}</b> {escape(text)}", PDF_STYLES["body"])
             for lead, text in block["items"]
         ])]
 
@@ -612,8 +618,8 @@ def pdf_block(block):
 def pdf_footer(canvas, document):
     canvas.saveState()
     canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(MUTED)
-    canvas.drawString(document.leftMargin, 12 * mm, f"{CASE_TITLE} — {PAGE_SUBTITLE}")
+    canvas.setFillColor(PDF_MUTED)
+    canvas.drawString(document.leftMargin, 12 * mm, f"{CASE_TITLE} — {INTRO_SUBTITLE}")
     canvas.drawRightString(
         A4[0] - document.rightMargin, 12 * mm, f"Page {document.page}"
     )
@@ -633,13 +639,13 @@ def build_intro_pdf(steps):
         rightMargin=22 * mm,
         topMargin=20 * mm,
         bottomMargin=22 * mm,
-        title=f"{CASE_TITLE} — {PAGE_SUBTITLE}",
+        title=f"{CASE_TITLE} — {INTRO_SUBTITLE}",
         author=CASE_TITLE,
     )
 
     story = [
         pdf_text(CASE_TITLE, "title"),
-        pdf_text(f"{PAGE_SUBTITLE}: introduction", "subtitle"),
+        pdf_text(f"{INTRO_SUBTITLE}: introduction", "subtitle"),
     ]
 
     for number, step_data in enumerate(steps, start=1):
@@ -662,14 +668,17 @@ def pdf_download_button(key):
     )
 
 
-# --------------------------------------------------
-# Step state
-# --------------------------------------------------
+# ==================================================
+# 6. Page flow
+# ==================================================
 
 # Step 0 is the welcome screen; steps 1 to TOTAL_STEPS are the intro
-
-if "intro_step" not in st.session_state:
-    st.session_state.intro_step = 0
+init_state(
+    intro_step=0,
+    market_guess=None,
+    answer_revealed=False,
+    celebrate=False,
+)
 
 
 def go_next():
@@ -680,46 +689,32 @@ def go_back():
     st.session_state.intro_step = max(st.session_state.intro_step - 1, 0)
 
 
-# Clamp, in case the number of steps changed during a session
-step = min(max(st.session_state.intro_step, 0), TOTAL_STEPS)
-st.session_state.intro_step = step
+def show_sidebar():
+    """PDF download, available on every step."""
+    with st.sidebar:
+        st.markdown("**Take the introduction with you**")
+        pdf_download_button(key="pdf_sidebar")
+        st.caption("The whole introduction in one document, with paragraph citations.")
 
 
-# --------------------------------------------------
-# Sidebar: PDF download, available on every step
-# --------------------------------------------------
-
-with st.sidebar:
-    st.markdown("**Take the introduction with you**")
-    pdf_download_button(key="pdf_sidebar")
-    st.caption("The whole introduction in one document, with paragraph citations.")
-
-
-# --------------------------------------------------
-# Welcome screen (step 0)
-# --------------------------------------------------
-
-if step == 0:
-
-    st.title(CASE_TITLE)
+def show_welcome():
+    st.title(HEADING_TITLE)
     st.subheader("Welcome to the chatbot")
 
     # Left-aligned here: justified text leaves wide gaps in short lines
-    st.markdown(
-        '<div class="teaser" style="text-align: left;">'
+    teaser(
         "This chatbot covers an absolute classic of European competition "
         "law: how the European Court of Justice decided whether bananas "
-        "form a market of their own.</div>"
-        '<div class="teaser" style="text-align: left;">'
+        "form a market of their own.",
         "Before we get into the chatbot, let's first explore what the "
-        "case is about.</div>",
-        unsafe_allow_html=True,
+        "case is about.",
+        align_left=True,
     )
     st.caption(f"{TOTAL_STEPS} short steps · about 3 minutes")
 
     st.write("")
     # Skip on the left, the main action on the right (like "Continue →")
-    skip_col, spacer_col, start_col = st.columns([1.2, 1.6, 1.6])
+    skip_col, _, start_col = st.columns([1.2, 1.6, 1.6])
 
     with skip_col:
         if st.button("Skip to the chatbot", key="skip_welcome", use_container_width=True):
@@ -733,72 +728,56 @@ if step == 0:
             use_container_width=True,
         )
 
-    st.stop()  # nothing below runs on the welcome screen
+
+def show_progress(step, current):
+    """Title, step indicator and progress bar (with a skip button
+    until the last step)."""
+    page_header(INTRO_SUBTITLE)
+    st.divider()
+    step_indicator(step, current["title"])
+
+    if step < TOTAL_STEPS:
+        progress_col, skip_col = st.columns([5, 1])
+        with progress_col:
+            progress_bar(step / TOTAL_STEPS)
+        with skip_col:
+            if st.button("Skip intro →", key="skip_intro", use_container_width=True):
+                go_to_chatbot()
+    else:
+        progress_bar(1.0)
 
 
-current = STEPS[step - 1]
+def show_current_step(step, current):
+    """The step's content. On the last step the Court's answer (and
+    everything after it) stays hidden until the student clicks the
+    reveal button. Returns True once the content is visible."""
+    st.header(current["title"])
 
+    revealed = True
 
-# --------------------------------------------------
-# Title and progress (shown throughout)
-# --------------------------------------------------
+    if step == TOTAL_STEPS:
+        if current.get("teaser"):
+            teaser(current["teaser"])
+        revealed = reveal_section()
+        if revealed:
+            for block in current["blocks"]:
+                render_block(block, compact=False)
+            celebrate_if_due()
+    else:
+        render_step(current)
 
-page_header(PAGE_SUBTITLE)
+    if step == GUESS_STEP:
+        st.write("")
+        guess_question()
 
-st.divider()
-
-st.markdown(
-    f'<div class="step-indicator">Step {step} of {TOTAL_STEPS} · '
-    f"{current['title']}</div>",
-    unsafe_allow_html=True,
-)
-
-if step < TOTAL_STEPS:
-    progress_col, skip_col = st.columns([5, 1])
-    with progress_col:
-        progress_bar(step / TOTAL_STEPS)
-    with skip_col:
-        if st.button("Skip intro →", key="skip_intro", use_container_width=True):
-            go_to_chatbot()
-else:
-    progress_bar(1.0)
-
-
-# --------------------------------------------------
-# Current step
-# --------------------------------------------------
-
-st.header(current["title"])
-
-# On the last step the Court's answer (and everything after it)
-# stays hidden until the student clicks the reveal button
-revealed = True
-
-if step == TOTAL_STEPS:
-    if current.get("teaser"):
-        teaser(current["teaser"])
-    revealed = reveal_section()
     if revealed:
-        for block in current["blocks"]:
-            render_block(block, compact=False)
-        celebrate_if_due()
-else:
-    render_step(current)
+        ask_button(current)
 
-if step == GUESS_STEP:
-    st.write("")
-    guess_question()
-
-if revealed:
-    ask_button(current)
+    return revealed
 
 
-# --------------------------------------------------
-# Last step: the full introduction and the PDF
-# --------------------------------------------------
-
-if step == TOTAL_STEPS and revealed:
-
+def show_summary_and_pdf():
+    """Last step: the whole introduction in one place, and the PDF."""
     st.divider()
 
     with st.expander("Read the whole introduction in one place"):
@@ -811,31 +790,45 @@ if step == TOTAL_STEPS and revealed:
     st.write("")
     teaser(
         "Ready to dig deeper? The chatbot answers questions on the full "
-        f"reasoning in {aglc_pinpoint(10, 35)}."
+        f"reasoning in {COVERED_PINPOINT}."
     )
 
 
-# --------------------------------------------------
-# Navigation
-# --------------------------------------------------
+def show_navigation(step):
+    st.write("")
+    nav_back, _, nav_next = st.columns([1, 2, 1.4])
 
-st.write("")
-nav_back, nav_spacer, nav_next = st.columns([1, 2, 1.4])
+    with nav_back:
+        st.button("← Back", on_click=go_back, use_container_width=True)
 
-with nav_back:
-    st.button(
-        "← Back",
-        on_click=go_back,
-        use_container_width=True,
-    )
+    with nav_next:
+        if step < TOTAL_STEPS:
+            st.button(
+                "Continue →",
+                on_click=go_next,
+                type="primary",
+                use_container_width=True,
+            )
+        elif st.button("Go to the chatbot →", type="primary", use_container_width=True):
+            go_to_chatbot()
 
-with nav_next:
-    if step < TOTAL_STEPS:
-        st.button(
-            "Continue →",
-            on_click=go_next,
-            type="primary",
-            use_container_width=True,
-        )
-    elif st.button("Go to the chatbot →", type="primary", use_container_width=True):
-        go_to_chatbot()
+
+# Clamp, in case the number of steps changed during a session
+step = min(max(st.session_state.intro_step, 0), TOTAL_STEPS)
+st.session_state.intro_step = step
+
+show_sidebar()
+
+if step == 0:
+    show_welcome()
+    st.stop()  # nothing below runs on the welcome screen
+
+current = STEPS[step - 1]
+
+show_progress(step, current)
+revealed = show_current_step(step, current)
+
+if step == TOTAL_STEPS and revealed:
+    show_summary_and_pdf()
+
+show_navigation(step)
