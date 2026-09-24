@@ -60,7 +60,6 @@ from shared import (
     split_paragraphs,
 )
 
-
 # ==================================================
 # 1. Page setup and settings
 # ==================================================
@@ -138,13 +137,11 @@ STARTER_QUESTIONS = [
     "What did the Court decide about the relevant product market?",
 ]
 
-
 # ==================================================
 # 2. Vector store
 # ==================================================
 
 os.environ["CHROMA_OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
-
 
 def chunk_metadata(file_name):
     """Paragraph range, speaker and note for a chunk, from CHUNKS."""
@@ -165,7 +162,6 @@ def chunk_metadata(file_name):
         "speaker": speaker,
         "note": note,
     }
-
 
 # show_spinner=False: a friendlier spinner is shown below instead
 @st.cache_resource(show_spinner=False)
@@ -195,12 +191,10 @@ def get_collection():
 
     return collection
 
-
 with st.spinner("Getting the judgment ready for your questions…"):
     collection = get_collection()
 
 client = OpenAI()
-
 
 def ask_model(model, messages, **options):
     """One model call (temperature 0); returns the reply text."""
@@ -208,7 +202,6 @@ def ask_model(model, messages, **options):
         model=model, messages=messages, temperature=0, **options
     )
     return response.choices[0].message.content
-
 
 # ==================================================
 # 3. Prompts
@@ -301,7 +294,6 @@ Bad: "FAO studies show that apple prices affect banana consumption
 inference.)
 """
 
-
 REWRITE_PROMPT = """
 You prepare search queries for a chatbot that searches paragraphs
 10–35 of a court judgment on whether bananas form a separate product
@@ -347,7 +339,6 @@ Latest message: What did the Court find about seasonal substitution?
 Output: {"standalone": true}
 """
 
-
 REVISE_PROMPT = """
 You correct answers written by a legal research assistant. You receive
 the retrieved paragraphs, the question, a draft answer and a list of
@@ -369,7 +360,6 @@ all other wording and the paragraph breaks exactly as they are.
 Return only the corrected answer.
 """
 
-
 # ==================================================
 # 4. Follow-up questions
 #
@@ -388,7 +378,6 @@ FOLLOW_UP_OPENERS = {"and", "but", "so", "also", "then", "what about"}
 
 MIN_STANDALONE_WORDS = 6
 
-
 def clearly_standalone(query):
     """True if the question is long enough, has no continuing opener
     and no word that refers back to the conversation."""
@@ -399,7 +388,6 @@ def clearly_standalone(query):
     if words[0] in FOLLOW_UP_OPENERS or " ".join(words[:2]) in FOLLOW_UP_OPENERS:
         return False
     return not any(word in FOLLOW_UP_MARKERS for word in words)
-
 
 def make_search_query(query, history):
     """Return (search_query, was_rewritten). Falls back to the original
@@ -434,7 +422,6 @@ def make_search_query(query, history):
     except Exception:
         return query, False
 
-
 # ==================================================
 # 5. Answer check: find what the prompt can't reliably prevent, then
 # correct it in up to MAX_REVISIONS targeted passes
@@ -446,7 +433,6 @@ FLAGGED_PHRASES = [
 ]
 
 CITATION_PATTERN = re.compile(r"\[\d+\]")
-
 
 def find_issues(answer):
     """A list of problems in the answer (empty if none)."""
@@ -467,7 +453,6 @@ def find_issues(answer):
             issues.append(f'This sentence has no paragraph citation: "{sentence}"')
 
     return issues
-
 
 def revise_answer(answer, context, question, issues):
     """One correction pass. Returns (text, succeeded)."""
@@ -492,7 +477,6 @@ def revise_answer(answer, context, question, issues):
     except Exception:
         return answer, False
 
-
 def check_and_correct(answer, context, question):
     """Silently check the answer and correct it if needed."""
     issues = find_issues(answer)
@@ -506,7 +490,6 @@ def check_and_correct(answer, context, question):
         issues = find_issues(answer)
 
     return answer
-
 
 # ==================================================
 # 6. Retrieval and answering
@@ -526,7 +509,6 @@ def retrieve_sources(search_query):
         for doc, meta in zip(results["documents"][0], results["metadatas"][0])
     ]
 
-
 def chunk_for_model(source):
     """A chunk headed by its speaker (and note, if any)."""
     header = []
@@ -535,7 +517,6 @@ def chunk_for_model(source):
     if source.get("note"):
         header.append(f"Note: {source['note']}")
     return "\n".join(header + [source["doc"]])
-
 
 def generate_answer(history, context, question_block):
     """Ask the model, then check and correct its answer."""
@@ -549,7 +530,6 @@ def generate_answer(history, context, question_block):
     ]
     answer = ask_model(ANSWER_MODEL, messages)
     return check_and_correct(answer, context, question_block)
-
 
 def answer_question(query):
     """One question, start to finish: show it, search, answer, show
@@ -594,14 +574,12 @@ def answer_question(query):
         {"role": "assistant", "content": answer, "sources": sources, "search_query": shown_query}
     )
 
-
 # ==================================================
 # 7. Display helpers
 # ==================================================
 
 # A pinpoint in an answer: [29], or a range [28]–[30]
 PINPOINT_PATTERN = re.compile(r"\[(\d+)\](?:\s*[–-]\s*\[(\d+)\])?")
-
 
 def paragraph_texts(sources):
     """{paragraph number: text} for every retrieved paragraph."""
@@ -611,7 +589,6 @@ def paragraph_texts(sources):
         for number, text in pairs:
             texts[int(number)] = one_line(text)
     return texts
-
 
 def render_answer(answer, sources):
     """The answer, with every pinpoint turned into a pink label that
@@ -640,7 +617,6 @@ def render_answer(answer, sources):
 
     render_html(PINPOINT_PATTERN.sub(to_label, answer))
 
-
 def render_sources(sources, search_query=None):
     """The "Sources" expander: one card per retrieved chunk, closest
     match first, laid out like the judgment. Shows the rewritten search
@@ -659,7 +635,6 @@ def render_sources(sources, search_query=None):
                 f'{chunk_html(source.get("doc", ""))}</div>'
             )
 
-
 def show_past_message(message):
     """Replay one stored message, with citation labels and sources."""
     avatar = USER_AVATAR if message["role"] == "user" else ASSISTANT_AVATAR
@@ -671,13 +646,11 @@ def show_past_message(message):
         else:
             st.write(message["content"])
 
-
 def type_out(text):
     """Yield the text word by word, so st.write_stream 'types' it."""
     for word in text.split(" "):
         yield word + " "
         time.sleep(WELCOME_WORD_DELAY)
-
 
 def show_welcome():
     """Welcome bubble with the starter questions underneath. Animated
@@ -703,7 +676,6 @@ def show_welcome():
             st.rerun()
 
     st.session_state.welcome_shown = True
-
 
 # ==================================================
 # 8. Page flow
@@ -751,3 +723,4 @@ for message in st.session_state.messages:
 
 if query:
     answer_question(query)
+ 
