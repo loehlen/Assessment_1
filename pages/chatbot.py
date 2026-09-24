@@ -7,8 +7,8 @@ How a question is answered
      standalone search query; standalone questions are searched as typed
   2. The closest chunks are retrieved from the Chroma vector store
   3. The model answers from those chunks only, citing paragraphs
-  4. A silent check finds uncited sentences and banned phrases,
-     and corrects them in up to MAX_REVISIONS passes
+  4. A silent check finds uncited sentences and banned phrases, and
+     corrects them in up to MAX_REVISIONS passes
   5. Each citation in the answer becomes a label that shows the
      paragraph text on hover (or tap)
 
@@ -47,14 +47,17 @@ from shared import (
     aglc_pinpoint,
     chunk_html,
     compact_header,
+    html_safe,
     init_state,
     judgment_sidebar_section,
     muted_note,
+    one_line,
     page_header,
     render_html,
     setup_page,
     sidebar_label,
     sidebar_nav,
+    split_paragraphs,
 )
 
 
@@ -62,56 +65,42 @@ from shared import (
 # 1. Page setup and settings
 # ==================================================
 
-# Password shared with home.py: entering it once unlocks both pages
+# Same password as home.py: entering it once unlocks both pages
 setup_page(f"{CASE_TITLE} — Chatbot", password_subtitle=CHATBOT_SUBTITLE)
 
-# The chatbot's avatar is the pink banana (ASSISTANT_AVATAR, from
-# shared.py). The user has no visible avatar: their questions appear as
-# right-aligned pink bubbles instead (styled in shared.py).
+# The user has no avatar: their questions are pink bubbles instead
 USER_AVATAR = None
 
-# CHUNKS_FOLDER comes from shared.py, so the judgment pop-up reads
-# exactly the same files as the vector store
-N_RESULTS = 3
-
+N_RESULTS = 3              # chunks retrieved per question
 ANSWER_MODEL = "gpt-4o"
 REWRITE_MODEL = "gpt-4o"
-
-# How many correction passes the silent answer check may make
-MAX_REVISIONS = 2
+MAX_REVISIONS = 2          # correction passes the answer check may make
 
 NOT_ADDRESSED_REPLY = (
     f"This chatbot covers the relevant product market ({COVERED_PARAGRAPHS}), "
     "and the retrieved paragraphs do not address this question."
 )
 
-# Shown as a chat bubble from the assistant before the first question.
-# Display only: it is never stored in the conversation or sent to the model.
+# Shown before the first question; display only, never sent to the model
 WELCOME_MESSAGE = (
     "Hi! I'm here to help you explore how the Court defined the relevant "
     f"product market in *United Brands*. Ask me anything about paragraphs "
     f"{COVERED_PINPOINT}, or pick a question below to get started."
 )
 
-# On the first visit, the welcome waits a moment, types itself out word
-# by word, then the starter questions appear one after another. In seconds:
+# First visit only: a short pause, the welcome types itself out, then the
+# starter questions appear one by one (in seconds)
 WELCOME_START_DELAY = 0.3
 WELCOME_WORD_DELAY = 0.04
 WELCOME_BUTTON_DELAY = 0.25
 
-# Each chunk file covers one step of the reasoning. For each file:
-# - "paragraphs": range (first, last), shown on the source cards
-# - "speaker": whose position the chunk sets out, given to the model
-#   only (paragraph text often doesn't name it); not shown on screen
-# - "note" (optional): finer attribution for the model where a chunk
-#   mixes voices or reads like fact but is a party's evidence
-# Keyed by filename, so the mapping can't silently desync if files are
-# added, removed or resplit.
+# Each chunk file covers one step of the reasoning, keyed by file name:
+#   paragraphs  range (first, last), shown on the source cards
+#   speaker     whose position the chunk sets out (for the model only)
+#   note        optional finer attribution, where a chunk mixes voices
+#               or reads like fact but is a party's evidence
 CHUNKS = {
-    "01_framing_legal_test.txt": {
-        "paragraphs": (10, 11),
-        "speaker": "The Court",
-    },
+    "01_framing_legal_test.txt": {"paragraphs": (10, 11), "speaker": "The Court"},
     "02_applicant_argument_interchangeability.txt": {
         "paragraphs": (12, 13),
         "speaker": "The Court / The applicant",
@@ -135,31 +124,14 @@ CHUNKS = {
             "FAO and quoted by the applicant."
         ),
     },
-    "04_commission_rebuttal.txt": {
-        "paragraphs": (19, 21),
-        "speaker": "The Commission",
-    },
-    "05_court_test_special_features.txt": {
-        "paragraphs": (22, 27),
-        "speaker": "The Court",
-    },
-    "06_court_cross_elasticity_data.txt": {
-        "paragraphs": (28, 30),
-        "speaker": "The Court",
-    },
-    "07_court_banana_characteristics.txt": {
-        "paragraphs": (31, 33),
-        "speaker": "The Court",
-    },
-    "08_court_conclusion.txt": {
-        "paragraphs": (34, 35),
-        "speaker": "The Court",
-    },
+    "04_commission_rebuttal.txt": {"paragraphs": (19, 21), "speaker": "The Commission"},
+    "05_court_test_special_features.txt": {"paragraphs": (22, 27), "speaker": "The Court"},
+    "06_court_cross_elasticity_data.txt": {"paragraphs": (28, 30), "speaker": "The Court"},
+    "07_court_banana_characteristics.txt": {"paragraphs": (31, 33), "speaker": "The Court"},
+    "08_court_conclusion.txt": {"paragraphs": (34, 35), "speaker": "The Court"},
 }
 
-# Starter questions, shown as buttons under the welcome message before
-# the first question only. Each button shows the question exactly as it
-# will be asked.
+# Buttons under the welcome, before the first question only
 STARTER_QUESTIONS = [
     "What did the applicant argue about bananas and other fresh fruit?",
     "How did the Commission respond to the applicant's argument?",
@@ -175,8 +147,7 @@ os.environ["CHROMA_OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
 
 
 def chunk_metadata(file_name):
-    """Metadata stored with each chunk: its paragraph range, speaker
-    and attribution note, taken from CHUNKS."""
+    """Paragraph range, speaker and note for a chunk, from CHUNKS."""
     info = CHUNKS.get(file_name)
 
     if info:
@@ -185,10 +156,7 @@ def chunk_metadata(file_name):
         note = info.get("note", "")
     else:
         paragraphs, speaker, note = "", "", ""
-        st.warning(
-            f"No entry for {file_name} in CHUNKS — "
-            "add its paragraph range and speaker."
-        )
+        st.warning(f"No entry for {file_name} in CHUNKS — add its paragraph range and speaker.")
 
     return {
         "source": CASE_NAME,
@@ -199,39 +167,28 @@ def chunk_metadata(file_name):
     }
 
 
-# show_spinner=False hides Streamlit's default "Running
-# get_collection()" message; a friendlier spinner is shown below
+# show_spinner=False: a friendlier spinner is shown below instead
 @st.cache_resource(show_spinner=False)
 def get_collection():
-
     client = chromadb.PersistentClient(path="./my_chroma_db")
-
-    openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-        model_name="text-embedding-3-large",
-    )
-
     collection = client.get_or_create_collection(
         name="united_brands_relevant_market",
-        embedding_function=openai_ef,
+        embedding_function=embedding_functions.OpenAIEmbeddingFunction(
+            model_name="text-embedding-3-large",
+        ),
     )
 
     folder = Path(CHUNKS_FOLDER)
-
     if not folder.exists():
         return collection
 
     documents, metadatas, ids = [], [], []
-
     for file in sorted(folder.glob("*.txt")):
-
         text = file.read_text(encoding="utf-8", errors="ignore").strip()
-
-        if not text:
-            continue
-
-        documents.append(text)
-        metadatas.append(chunk_metadata(file.name))
-        ids.append(hashlib.md5(file.name.encode()).hexdigest())
+        if text:
+            documents.append(text)
+            metadatas.append(chunk_metadata(file.name))
+            ids.append(hashlib.md5(file.name.encode()).hexdigest())
 
     if documents:
         collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
@@ -243,6 +200,14 @@ with st.spinner("Getting the judgment ready for your questions…"):
     collection = get_collection()
 
 client = OpenAI()
+
+
+def ask_model(model, messages, **options):
+    """One model call (temperature 0); returns the reply text."""
+    response = client.chat.completions.create(
+        model=model, messages=messages, temperature=0, **options
+    )
+    return response.choices[0].message.content
 
 
 # ==================================================
@@ -408,10 +373,8 @@ Return only the corrected answer.
 # ==================================================
 # 4. Follow-up questions
 #
-# Step 1 (code): a question that clearly stands on its own is searched
-#   exactly as typed and never sent to the rewriter.
-# Step 2 (model): anything else is classified by the rewriter; only
-#   genuine follow-ups are rewritten into a standalone search query.
+# Clearly standalone questions are searched exactly as typed. Anything
+# else goes to the rewriter, which rewrites genuine follow-ups only.
 # ==================================================
 
 # Words that usually point back to something earlier in the conversation
@@ -427,63 +390,45 @@ MIN_STANDALONE_WORDS = 6
 
 
 def clearly_standalone(query):
-    """True if the question plainly stands on its own: long enough, no
-    continuing opener, and no word that refers back to the conversation.
-    Anything else is left to the rewriter to classify."""
-
+    """True if the question is long enough, has no continuing opener
+    and no word that refers back to the conversation."""
     words = re.findall(r"[a-z']+", query.lower())
 
     if len(words) < MIN_STANDALONE_WORDS:
         return False
-
     if words[0] in FOLLOW_UP_OPENERS or " ".join(words[:2]) in FOLLOW_UP_OPENERS:
         return False
-
     return not any(word in FOLLOW_UP_MARKERS for word in words)
 
 
 def make_search_query(query, history):
-    """Return (search_query, was_rewritten).
-
-    First questions and clearly standalone questions are searched
-    exactly as typed. Only follow-ups are rewritten. If anything goes
-    wrong, fall back to the original question.
-    """
-
+    """Return (search_query, was_rewritten). Falls back to the original
+    question if anything goes wrong."""
     if not history or clearly_standalone(query):
         return query, False
 
-    conversation = "\n".join(
-        f"{message['role']}: {message['content']}" for message in history[-4:]
-    )
+    conversation = "\n".join(f"{m['role']}: {m['content']}" for m in history[-4:])
 
     try:
-        response = client.chat.completions.create(
-            model=REWRITE_MODEL,
-            messages=[
+        reply = ask_model(
+            REWRITE_MODEL,
+            [
                 {"role": "system", "content": REWRITE_PROMPT},
                 {
                     "role": "user",
-                    "content": (
-                        f"Conversation so far:\n{conversation}\n\n"
-                        f"Latest message: {query}"
-                    ),
+                    "content": f"Conversation so far:\n{conversation}\n\nLatest message: {query}",
                 },
             ],
-            temperature=0,
             response_format={"type": "json_object"},
         )
-
-        data = json.loads(response.choices[0].message.content)
+        data = json.loads(reply)
 
         if data.get("standalone", True):
             return query, False
 
         rewritten = (data.get("query") or "").strip()
-
         if not rewritten or rewritten == query.strip():
             return query, False
-
         return rewritten, True
 
     except Exception:
@@ -491,8 +436,8 @@ def make_search_query(query, history):
 
 
 # ==================================================
-# 5. Answer check: find the problems the prompt can't reliably
-# prevent, then correct them in up to MAX_REVISIONS targeted passes
+# 5. Answer check: find what the prompt can't reliably prevent, then
+# correct it in up to MAX_REVISIONS targeted passes
 # ==================================================
 
 FLAGGED_PHRASES = [
@@ -504,22 +449,18 @@ CITATION_PATTERN = re.compile(r"\[\d+\]")
 
 
 def find_issues(answer):
-    """Return a list of problems found in the answer, each as a
-    description for the correction pass. Empty if none were found."""
-
+    """A list of problems in the answer (empty if none)."""
     if answer.strip().startswith(NOT_ADDRESSED_REPLY[:40]):
         return []
 
-    issues = []
-    lowered = answer.lower()
+    issues = [
+        f'The answer uses "{phrase}".'
+        for phrase in FLAGGED_PHRASES
+        if re.search(rf"\b{re.escape(phrase)}\b", answer.lower())
+    ]
 
-    for phrase in FLAGGED_PHRASES:
-        if re.search(rf"\b{re.escape(phrase)}\b", lowered):
-            issues.append(f'The answer uses "{phrase}".')
-
-    sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", answer.strip())
-
-    for sentence in sentences:
+    # Questions and "not addressed" sentences need no citation
+    for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])", answer.strip()):
         is_question = sentence.rstrip().endswith("?")
         is_not_addressed = "address" in sentence.lower()
         if not is_question and not is_not_addressed and not CITATION_PATTERN.search(sentence):
@@ -529,13 +470,11 @@ def find_issues(answer):
 
 
 def revise_answer(answer, context, question, issues):
-    """One correction pass targeted at the listed issues.
-    Returns (text, succeeded)."""
-
+    """One correction pass. Returns (text, succeeded)."""
     try:
-        response = client.chat.completions.create(
-            model=ANSWER_MODEL,
-            messages=[
+        revised = ask_model(
+            ANSWER_MODEL,
+            [
                 {"role": "system", "content": REVISE_PROMPT},
                 {
                     "role": "user",
@@ -543,14 +482,11 @@ def revise_answer(answer, context, question, issues):
                         f"Retrieved paragraphs:\n\n{context}\n\n"
                         f"Question:\n\n{question}\n\n"
                         f"Draft answer:\n\n{answer}\n\n"
-                        "Problems found:\n- "
-                        + "\n- ".join(issues)
+                        "Problems found:\n- " + "\n- ".join(issues)
                     ),
                 },
             ],
-            temperature=0,
-        )
-        revised = response.choices[0].message.content.strip()
+        ).strip()
         return (revised or answer), bool(revised)
 
     except Exception:
@@ -558,9 +494,7 @@ def revise_answer(answer, context, question, issues):
 
 
 def check_and_correct(answer, context, question):
-    """Check the answer; if problems are found, correct them in up to
-    MAX_REVISIONS passes. Runs silently and returns the final answer."""
-
+    """Silently check the answer and correct it if needed."""
     issues = find_issues(answer)
 
     for _ in range(MAX_REVISIONS):
@@ -579,8 +513,8 @@ def check_and_correct(answer, context, question):
 # ==================================================
 
 def retrieve_sources(search_query):
-    """The N_RESULTS closest chunks, closest first, as a plain list of
-    sources (displayed now AND stored with the answer)."""
+    """The N_RESULTS closest chunks, closest first (shown now and
+    stored with the answer)."""
     results = collection.query(query_texts=[search_query], n_results=N_RESULTS)
     return [
         {
@@ -594,8 +528,7 @@ def retrieve_sources(search_query):
 
 
 def chunk_for_model(source):
-    """Each chunk is headed by its speaker (and an attribution note
-    where a chunk needs one); paragraph numbers are inside the text."""
+    """A chunk headed by its speaker (and note, if any)."""
     header = []
     if source.get("speaker"):
         header.append(f"Source: {source['speaker']}")
@@ -606,46 +539,31 @@ def chunk_for_model(source):
 
 def generate_answer(history, context, question_block):
     """Ask the model, then check and correct its answer."""
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages += history
-    messages.append(
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        *history,
         {
             "role": "user",
-            "content": (
-                f"Retrieved context:\n\n{context}\n\n"
-                f"Question:\n\n{question_block}"
-            ),
-        }
-    )
-
-    response = client.chat.completions.create(
-        model=ANSWER_MODEL,
-        messages=messages,
-        temperature=0,
-    )
-    answer = response.choices[0].message.content
-
+            "content": f"Retrieved context:\n\n{context}\n\nQuestion:\n\n{question_block}",
+        },
+    ]
+    answer = ask_model(ANSWER_MODEL, messages)
     return check_and_correct(answer, context, question_block)
 
 
 def answer_question(query):
-    """The whole round trip for one question: show it, search, answer,
-    check, show the answer and store both in the conversation."""
-
+    """One question, start to finish: show it, search, answer, show
+    the answer and store both in the conversation."""
     st.session_state.messages.append({"role": "user", "content": query})
-
     with st.chat_message("user", avatar=USER_AVATAR):
         st.write(query)
 
-    # Recent history (excluding the question just asked), stripped of
-    # extra keys (like "sources") — used for rewriting and answering
+    # Recent history, without the question just asked or extra keys
     history = [
-        {"role": message["role"], "content": message["content"]}
-        for message in st.session_state.messages[-6:-1]
+        {"role": m["role"], "content": m["content"]}
+        for m in st.session_state.messages[-6:-1]
     ]
 
-    # Follow-ups are rewritten into standalone questions before
-    # searching; standalone questions are searched exactly as typed
     with st.spinner("Understanding your question…"):
         search_query, was_rewritten = make_search_query(query, history)
 
@@ -653,16 +571,11 @@ def answer_question(query):
         sources = retrieve_sources(search_query)
     except Exception:
         with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-            st.error(
-                "Something went wrong retrieving relevant passages. "
-                "Please try asking again."
-            )
+            st.error("Something went wrong retrieving relevant passages. Please try asking again.")
         st.stop()
 
     shown_query = search_query if was_rewritten else None
-
     context = "\n\n---\n\n".join(chunk_for_model(s) for s in sources)
-
     question_block = query
     if was_rewritten:
         question_block += f"\n\nInterpreted as: {search_query}"
@@ -673,21 +586,12 @@ def answer_question(query):
                 answer = generate_answer(history, context, question_block)
             render_answer(answer, sources)
             render_sources(sources, shown_query)
-
         except Exception:
-            st.error(
-                "Something went wrong generating a response. "
-                "Please try again in a moment."
-            )
+            st.error("Something went wrong generating a response. Please try again in a moment.")
             st.stop()
 
     st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": answer,
-            "sources": sources,
-            "search_query": shown_query,
-        }
+        {"role": "assistant", "content": answer, "sources": sources, "search_query": shown_query}
     )
 
 
@@ -695,41 +599,24 @@ def answer_question(query):
 # 7. Display helpers
 # ==================================================
 
-# The "[n]" marker at the start of each paragraph in a chunk
-PARAGRAPH_MARKER = re.compile(r"\[(\d+)\]")
-
 # A pinpoint in an answer: [29], or a range [28]–[30]
 PINPOINT_PATTERN = re.compile(r"\[(\d+)\](?:\s*[–-]\s*\[(\d+)\])?")
 
 
 def paragraph_texts(sources):
-    """{paragraph number: text} for every paragraph in the retrieved
-    chunks, split at the [n] marker that starts each one."""
+    """{paragraph number: text} for every retrieved paragraph."""
     texts = {}
     for source in sources:
-        parts = PARAGRAPH_MARKER.split(source.get("doc", ""))
-        # parts = [text before the first marker, "10", text, "11", text, ...]
-        for number, text in zip(parts[1::2], parts[2::2]):
-            texts[int(number)] = " ".join(text.split())
+        _, pairs = split_paragraphs(source.get("doc", ""))
+        for number, text in pairs:
+            texts[int(number)] = one_line(text)
     return texts
 
 
-def popover_safe(text):
-    """Escape paragraph text for the hover box: HTML characters, plus
-    the ones Streamlit would otherwise read as italics, bold, code or
-    maths inside it."""
-    text = html.escape(text)
-    for char, entity in (("*", "&#42;"), ("_", "&#95;"), ("$", "&#36;"), ("`", "&#96;")):
-        text = text.replace(char, entity)
-    return text
-
-
 def render_answer(answer, sources):
-    """The answer text, with every pinpoint ([29] or [28]–[30]) turned
-    into a pink label that shows the paragraph text on hover or tap.
-    Pinpoints for paragraphs that weren't retrieved stay plain labels.
-    Blank lines in the answer become separate paragraphs on screen."""
-
+    """The answer, with every pinpoint turned into a pink label that
+    shows the paragraph text on hover or tap (plain label if the
+    paragraph wasn't retrieved)."""
     texts = paragraph_texts(sources)
 
     def to_label(match):
@@ -742,56 +629,39 @@ def render_answer(answer, sources):
             return f'<span class="cite">{pinpoint}</span>'
 
         paragraphs = "".join(
-            f'<span class="cite-paragraph"><b>[{n}]</b> {popover_safe(texts[n])}</span>'
+            f'<span class="cite-paragraph"><b>[{n}]</b> {html_safe(texts[n])}</span>'
             for n in numbers
         )
-
         return (
             f'<span class="cite" tabindex="0">{pinpoint}'
-            f'<span class="cite-pop"><span class="cite-pop-inner">'
-            f"{paragraphs}"
-            f"</span></span></span>"
+            f'<span class="cite-pop"><span class="cite-pop-inner">{paragraphs}</span></span>'
+            f"</span>"
         )
 
     render_html(PINPOINT_PATTERN.sub(to_label, answer))
 
 
 def render_sources(sources, search_query=None):
-    """The sources expander under an answer. Its label and the cards
-    both list the retrieved chunks in MATCH order (closest first), so
-    it's visible how well retrieval worked. Each card shows the match
-    number and pinpoint, then the chunk text laid out exactly like the
-    judgment (headings, and paragraph numbers in the margin). The
-    speaker isn't shown: it is there for the model only. If the
-    question was rewritten for retrieval, show what was searched."""
-
+    """The "Sources" expander: one card per retrieved chunk, closest
+    match first, laid out like the judgment. Shows the rewritten search
+    query, if there was one."""
     pinpoints = [s["paragraphs"] for s in sources if s.get("paragraphs")]
-    label = " · ".join(["Sources"] + pinpoints)
 
-    with st.expander(label):
-
+    with st.expander(" · ".join(["Sources"] + pinpoints)):
         if search_query:
             muted_note(f"Searched for: {html.escape(search_query)}")
 
         for rank, source in enumerate(sources, start=1):
-
-            parts = [f"Match {rank}", source.get("paragraphs")]
-            title = " · ".join(part for part in parts if part)
-
-            # One line, no indentation: Streamlit would read indented
-            # lines inside the markdown as a code block
+            title = " · ".join(p for p in [f"Match {rank}", source.get("paragraphs")] if p)
+            # One line: Streamlit reads indented lines as a code block
             render_html(
-                f'<div class="chunk-card">'
-                f'<div class="chunk-title">{title}</div>'
-                f'{chunk_html(source.get("doc", ""))}'
-                f"</div>"
+                f'<div class="chunk-card"><div class="chunk-title">{title}</div>'
+                f'{chunk_html(source.get("doc", ""))}</div>'
             )
 
 
 def show_past_message(message):
-    """Replay one stored message: past answers get their citation
-    labels and sources expander again."""
-
+    """Replay one stored message, with citation labels and sources."""
     avatar = USER_AVATAR if message["role"] == "user" else ASSISTANT_AVATAR
 
     with st.chat_message(message["role"], avatar=avatar):
@@ -803,31 +673,21 @@ def show_past_message(message):
 
 
 def type_out(text):
-    """Yield the text word by word, with a short pause after each, so
-    st.write_stream shows it being 'typed'."""
+    """Yield the text word by word, so st.write_stream 'types' it."""
     for word in text.split(" "):
         yield word + " "
         time.sleep(WELCOME_WORD_DELAY)
 
 
 def show_welcome():
-    """Before the first question: a welcome bubble from the assistant,
-    with the starter questions underneath as possible replies.
-    Clicking one asks it straight away.
-
-    On the first visit there's a short pause, then the message types
-    itself out and the questions appear one after another; after that
-    (every later rerun), it all shows at once, so the animation doesn't
-    replay on every click."""
-
+    """Welcome bubble with the starter questions underneath. Animated
+    on the first visit only, so it doesn't replay on every click."""
     animate = not st.session_state.welcome_shown
 
     if animate:
-        # Let the page settle (e.g. the password screen clear) first
-        time.sleep(WELCOME_START_DELAY)
+        time.sleep(WELCOME_START_DELAY)  # let the password screen clear
 
-    # The container's key gives the welcome its own CSS class
-    # (st-key-welcome), so it can be left-aligned in shared.py
+    # The key gives the container the CSS class st-key-welcome
     with st.container(key="welcome"):
         with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
             if animate:
@@ -855,40 +715,30 @@ init_state(
     welcome_shown=False,   # the welcome animation has played once
 )
 
-# Sidebar first: Streamlit draws the page in code order, so this keeps
-# the sidebar from waiting for the welcome animation. Page links at the
-# top (the "Introduction" link replaces the old "Back to case overview"
-# button), then the same labelled sections as on the intro page.
+# Sidebar first, so it doesn't wait for the welcome animation
 sidebar_nav()
 
 sidebar_label("Conversation")
-if st.sidebar.button(
-    "Reset conversation", key="reset", use_container_width=True
-):
+if st.sidebar.button("Reset conversation", key="reset", use_container_width=True):
     st.session_state.messages = []
     st.rerun()
 st.sidebar.caption("Clears the chat so you can start afresh.")
 
-# Opens the judgment text in a pop-up; closing it leaves the
-# conversation exactly as it was
 judgment_sidebar_section()
 
-# Read the question first, so the header already knows whether a
-# conversation is under way (the chat input stays pinned to the bottom
-# of the page wherever it is called)
+# Read the question before drawing the header, so the header knows
+# whether a conversation is under way (the input stays pinned to the
+# bottom wherever it is called)
 query = st.chat_input("Ask a question about the relevant product market...")
 
 if not query and st.session_state.pending_query:
     query = st.session_state.pending_query
     st.session_state.pending_query = None
 
-# Before the first question: full header, welcome message and starter
-# questions. Once a conversation is under way: a one-line header only.
-# Everything sits in one placeholder, which is cleared the moment the
-# script reaches it, so the welcome disappears as soon as a question is
-# asked, instead of lingering until the answer is ready.
+# Full header and welcome before the first question, a one-line header
+# after. The placeholder is cleared as soon as a question is asked, so
+# the welcome doesn't linger while the answer loads.
 top = st.empty()
-
 with top.container():
     if st.session_state.messages or query:
         compact_header(CHATBOT_SUBTITLE)

@@ -2,10 +2,9 @@
 Intro page: a short step-by-step introduction to the case, followed
 by a link to the chatbot.
 
-The content is written once (STEPS) and used in three places: the
-individual steps, the "whole introduction" summary on the last step,
-and the downloadable PDF. So the PDF never contains anything the app
-doesn't show.
+The content is written once (STEPS) and used three times: the steps
+themselves, the "whole introduction" summary on the last step, and the
+downloadable PDF. So the PDF never contains anything the app doesn't show.
 
 Sections
   1. Page setup
@@ -71,31 +70,29 @@ PDF_FILE_NAME = "United_Brands_relevant_product_market_introduction.pdf"
 # 2. Intro content
 #
 # Each step has:
-#   title    shown in the step indicator and as the heading
+#   title    step indicator and heading
 #   teaser   optional hook line (on screen only)
-#   ask      optional question sent to the chatbot by the step's
-#            button; leave it out for content the chatbot can't
-#            answer (the background)
-#   blocks   the content, shown in order
+#   ask      optional question for the "Ask the chatbot" button
+#            (left out where the chatbot can't answer, e.g. background)
+#   blocks   the content, in order
 #
 # Block types:
 #   background    uncited context, the case card and a note
-#   text          a short visible paragraph
+#   text          a short paragraph
 #   box           highlighted box: label, text and optional bullets
 #   label         a small bold heading
 #   points        bullet points, each (bold lead, text)
-#   details       click to open: label, and paragraphs and/or an
-#                 "intro" line followed by "bullets"
+#   details       click-to-open section: label, then "paragraphs"
+#                 and/or "intro" + "bullets"
 #   side_by_side  two click-to-open sections next to each other
 #
-# Every sentence reporting the judgment opens with its source and
-# ends with a pinpoint, following the chatbot's own rules.
+# Like the chatbot's answers, every sentence reporting the judgment
+# names its source and ends with a pinpoint.
 # ==================================================
 
 STEPS = [
 
-    # Step 1 — background (outside [10]–[35], so no Ask button:
-    # the chatbot can't answer questions about it)
+    # Step 1: background (outside [10]–[35], so no Ask button)
     {
         "title": "A little background",
         "teaser": "First, who was involved and how did the case reach the Court?",
@@ -116,7 +113,7 @@ STEPS = [
         ],
     },
 
-    # Step 2 — [10], [12]
+    # Step 2: [10], [12]
     {
         "title": "The market-definition question",
         "blocks": [
@@ -148,13 +145,10 @@ STEPS = [
                 ],
             },
         ],
-        "ask": (
-            "What did the Court say about how the relevant market must "
-            "be defined?"
-        ),
+        "ask": "What did the Court say about how the relevant market must be defined?",
     },
 
-    # Step 3 — [13]–[21]
+    # Step 3: [13]–[21]
     {
         "title": "The parties' positions",
         "teaser": "Both sides used the same sales data — and read it differently.",
@@ -174,13 +168,9 @@ STEPS = [
                             cite(
                                 "When other fruit is in season, banana "
                                 "prices and sales drop.",
-                                14,
-                                17,
+                                14, 17,
                             ),
-                            cite(
-                                "So bananas belong to one fresh fruit market.",
-                                18,
-                            ),
+                            cite("So bananas belong to one fresh fruit market.", 18),
                         ],
                     },
                     {
@@ -215,7 +205,7 @@ STEPS = [
         ),
     },
 
-    # Step 4 — [22]
+    # Step 4: [22]
     {
         "title": "The Court's test",
         "teaser": "What would make bananas a market of their own?",
@@ -229,10 +219,7 @@ STEPS = [
                 ),
                 "bullets": [
                     "other fruit can replace them only to a limited extent, and",
-                    cite(
-                        "competition from other fruit is hardly perceptible.",
-                        22,
-                    ),
+                    cite("competition from other fruit is hardly perceptible.", 22),
                 ],
             },
         ],
@@ -242,9 +229,9 @@ STEPS = [
         ),
     },
 
-    # Step 5 — [27]–[29], [31], [35]
-    # On screen, these blocks stay hidden until the student clicks the
-    # reveal button; the summary and the PDF always show them.
+    # Step 5: [27]–[29], [31], [35]
+    # On screen, hidden until the reveal button is clicked; the summary
+    # and the PDF always show it.
     {
         "title": "The Court's answer",
         "teaser": "Did bananas pass the test?",
@@ -277,8 +264,7 @@ STEPS = [
                             "only peaches and table grapes compete, and only "
                             "seasonally in West Germany. Oranges don't "
                             "compete, and apples only to a relative degree.",
-                            28,
-                            29,
+                            28, 29,
                         ),
                     ),
                     (
@@ -303,7 +289,7 @@ STEPS = [
 
 TOTAL_STEPS = len(STEPS)
 
-# The guess on the market-definition step, answered on the last step
+# The guess on step 2, answered on the last step
 GUESS_STEP = 2
 GUESS_OPTIONS = ["A. The fresh fruit market", "B. A separate banana market"]
 CORRECT_GUESS = GUESS_OPTIONS[1]
@@ -311,26 +297,31 @@ CORRECT_GUESS = GUESS_OPTIONS[1]
 
 # ==================================================
 # 3. Showing a step
+#
+# compact=True is the version inside the summary expander: no teaser,
+# and click-to-open sections shown open (Streamlit doesn't allow
+# expanders inside expanders).
 # ==================================================
 
-def render_details_body(item):
-    for paragraph in item.get("paragraphs", []):
-        st.write(paragraph)
-    if item.get("intro"):
-        st.write(item["intro"])
-    if item.get("bullets"):
-        st.markdown("\n".join(f"- {bullet}" for bullet in item["bullets"]))
+def bullet_list(items):
+    return "\n".join(f"- {item}" for item in items)
 
 
 def render_details(item, compact):
-    """Click-to-open section; shown open in the summary, because
-    Streamlit doesn't allow expanders inside expanders."""
+    def body():
+        for paragraph in item.get("paragraphs", []):
+            st.write(paragraph)
+        if item.get("intro"):
+            st.write(item["intro"])
+        if item.get("bullets"):
+            st.markdown(bullet_list(item["bullets"]))
+
     if compact:
         st.markdown(f"*{item['label']}*")
-        render_details_body(item)
+        body()
     else:
         with st.expander(item["label"]):
-            render_details_body(item)
+            body()
 
 
 def render_box(block):
@@ -347,31 +338,23 @@ def render_box(block):
     )
 
 
-def render_block(block, compact):
+def render_block(block, compact=False):
     kind = block["type"]
 
     if kind == "background":
         st.write(block["text"])
         case_card()
         st.caption(block["note"])
-
     elif kind == "text":
         st.write(block["text"])
-
     elif kind == "box":
         render_box(block)
-
     elif kind == "label":
         st.markdown(f"**{block['text']}**")
-
     elif kind == "points":
-        st.markdown(
-            "\n".join(f"- **{lead}** {text}" for lead, text in block["items"])
-        )
-
+        st.markdown(bullet_list(f"**{lead}** {text}" for lead, text in block["items"]))
     elif kind == "details":
         render_details(block, compact)
-
     elif kind == "side_by_side":
         columns = st.columns(len(block["items"]))
         for column, item in zip(columns, block["items"]):
@@ -380,26 +363,15 @@ def render_block(block, compact):
 
 
 def render_step(step_data, compact=False):
-    """compact=True is the version inside the summary expander:
-    no teaser, no Ask button, sections shown open."""
-
     if not compact and step_data.get("teaser"):
         teaser(step_data["teaser"])
-
     for block in step_data["blocks"]:
         render_block(block, compact)
 
 
-def step_indicator(step, title):
-    render_html(
-        f'<div class="step-indicator">Step {step} of {TOTAL_STEPS} · {title}</div>'
-    )
-
-
 def progress_bar(fraction):
-    """Pink-outlined bar that fills up pink step by step (styled by
-    .intro-progress in shared.py; replaces st.progress, whose colours
-    can't be set reliably)."""
+    """Pink-outlined bar that fills up step by step (replaces
+    st.progress, whose colours can't be set reliably)."""
     render_html(
         '<div class="intro-progress">'
         f'<div class="intro-progress-fill" style="width: {fraction:.0%};"></div>'
@@ -419,8 +391,8 @@ def ask_button(step_data):
 # ==================================================
 # 4. The guess (step 2) and the reveal (last step)
 #
-# The guess is stored under its own key, because Streamlit forgets
-# a widget's value once the widget is no longer on screen.
+# The guess is saved under its own key, because Streamlit forgets a
+# widget's value once the widget is off screen.
 # ==================================================
 
 def save_guess():
@@ -449,26 +421,19 @@ def reveal_answer():
 
 
 def reveal_section():
-    """The guess and the reveal button on the last step. Returns True
-    once the answer has been revealed."""
+    """The guess and the reveal button. Returns True once revealed."""
     guess = st.session_state.market_guess
 
     if guess:
         teaser(f"You guessed: <em>{guess[3:].lower()}</em>.")
 
     if not st.session_state.answer_revealed:
-        label = (
-            "Find out if you were right →" if guess
-            else "Reveal the Court's answer →"
-        )
+        label = "Find out if you were right →" if guess else "Reveal the Court's answer →"
         st.button(label, on_click=reveal_answer, type="primary", key="reveal")
         return False
 
     if guess == CORRECT_GUESS:
-        teaser(
-            f'{banana("inline-icon")}<strong>Correct! Bananas are a market '
-            "of their own.</strong>"
-        )
+        teaser(f'{banana("inline-icon")}<strong>Correct! Bananas are a market of their own.</strong>')
     elif guess:
         teaser("<strong>Not quite. The Court went the other way.</strong>")
 
@@ -476,15 +441,14 @@ def reveal_section():
 
 
 def celebrate_if_due():
-    """Balloons once, straight after a correct reveal (recoloured into
-    the app's mauve pinks by the stylesheet in shared.py)."""
+    """Balloons once, straight after a correct reveal."""
     if st.session_state.celebrate:
         st.balloons()
         st.session_state.celebrate = False
 
 
 # ==================================================
-# 5. PDF — built from the same STEPS content
+# 5. PDF, built from the same STEPS content
 # ==================================================
 
 PDF_ACCENT = colors.HexColor(PALETTE["accent"])
@@ -494,31 +458,26 @@ PDF_BORDER = colors.HexColor(PALETTE["card-border"])
 PDF_TEXT = colors.HexColor(PALETTE["text"])
 PDF_MUTED = colors.HexColor(PALETTE["muted"])
 
+
+def pdf_style(name, size, leading, colour=PDF_TEXT, bold=False, **extra):
+    font = "Helvetica-Bold" if bold else "Helvetica"
+    return ParagraphStyle(
+        name, fontName=font, fontSize=size, leading=leading, textColor=colour, **extra
+    )
+
+
 PDF_STYLES = {
-    "title": ParagraphStyle(
-        "title", fontName="Helvetica-Bold", fontSize=20, leading=24,
-        textColor=PDF_TEXT, spaceAfter=4,
+    "title": pdf_style("title", 20, 24, bold=True, spaceAfter=4),
+    "subtitle": pdf_style("subtitle", 13, 17, PDF_ACCENT, spaceAfter=14),
+    "heading": pdf_style(
+        "heading", 13.5, 17, PDF_ACCENT, bold=True,
+        spaceBefore=14, spaceAfter=6, keepWithNext=1,
     ),
-    "subtitle": ParagraphStyle(
-        "subtitle", fontName="Helvetica", fontSize=13, leading=17,
-        textColor=PDF_ACCENT, spaceAfter=14,
+    "label": pdf_style(
+        "label", 10.5, 14, bold=True, spaceBefore=4, spaceAfter=3, keepWithNext=1,
     ),
-    "heading": ParagraphStyle(
-        "heading", fontName="Helvetica-Bold", fontSize=13.5, leading=17,
-        textColor=PDF_ACCENT, spaceBefore=14, spaceAfter=6, keepWithNext=1,
-    ),
-    "label": ParagraphStyle(
-        "label", fontName="Helvetica-Bold", fontSize=10.5, leading=14,
-        textColor=PDF_TEXT, spaceBefore=4, spaceAfter=3, keepWithNext=1,
-    ),
-    "body": ParagraphStyle(
-        "body", fontName="Helvetica", fontSize=10.5, leading=15,
-        textColor=PDF_TEXT, alignment=TA_JUSTIFY, spaceAfter=6,
-    ),
-    "note": ParagraphStyle(
-        "note", fontName="Helvetica", fontSize=8.5, leading=11.5,
-        textColor=PDF_MUTED, spaceAfter=6,
-    ),
+    "body": pdf_style("body", 10.5, 15, alignment=TA_JUSTIFY, spaceAfter=6),
+    "note": pdf_style("note", 8.5, 11.5, PDF_MUTED, spaceAfter=6),
 }
 
 
@@ -588,37 +547,26 @@ def pdf_box(block):
 
 
 def pdf_block(block):
-    """The PDF version of one content block, as a list of flowables."""
+    """One content block as a list of PDF flowables."""
     kind = block["type"]
 
     if kind == "background":
-        return [
-            pdf_text(block["text"]),
-            pdf_case_card(),
-            pdf_text(block["note"], "note"),
-        ]
-
+        return [pdf_text(block["text"]), pdf_case_card(), pdf_text(block["note"], "note")]
     if kind == "text":
         return [pdf_text(block["text"])]
-
     if kind == "box":
         return [pdf_box(block)]
-
     if kind == "label":
         return [pdf_text(block["text"], "label")]
-
     if kind == "points":
         return [pdf_bullets([
             Paragraph(f"<b>{escape(lead)}</b> {escape(text)}", PDF_STYLES["body"])
             for lead, text in block["items"]
         ])]
-
     if kind == "details":
         return [pdf_details(block)]
-
     if kind == "side_by_side":
         return [pdf_details(item) for item in block["items"]]
-
     return []
 
 
@@ -627,17 +575,14 @@ def pdf_footer(canvas, document):
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(PDF_MUTED)
     canvas.drawString(document.leftMargin, 12 * mm, f"{CASE_TITLE} — {INTRO_SUBTITLE}")
-    canvas.drawRightString(
-        A4[0] - document.rightMargin, 12 * mm, f"Page {document.page}"
-    )
+    canvas.drawRightString(A4[0] - document.rightMargin, 12 * mm, f"Page {document.page}")
     canvas.restoreState()
 
 
 @st.cache_data
 def build_intro_pdf(steps):
-    """The full introduction as a PDF (bytes). Cached, and rebuilt
-    automatically whenever the content in STEPS changes."""
-
+    """The full introduction as PDF bytes. Cached; rebuilt whenever
+    STEPS changes."""
     buffer = io.BytesIO()
     document = SimpleDocTemplate(
         buffer,
@@ -654,7 +599,6 @@ def build_intro_pdf(steps):
         pdf_text(CASE_TITLE, "title"),
         pdf_text(f"{INTRO_SUBTITLE}: introduction", "subtitle"),
     ]
-
     for number, step_data in enumerate(steps, start=1):
         story.append(pdf_text(f"{number}. {step_data['title']}", "heading"))
         for block in step_data["blocks"]:
@@ -680,12 +624,7 @@ def pdf_download_button(key):
 # ==================================================
 
 # Step 0 is the welcome screen; steps 1 to TOTAL_STEPS are the intro
-init_state(
-    intro_step=0,
-    market_guess=None,
-    answer_revealed=False,
-    celebrate=False,
-)
+init_state(intro_step=0, market_guess=None, answer_revealed=False, celebrate=False)
 
 
 def go_next():
@@ -697,9 +636,7 @@ def go_back():
 
 
 def show_sidebar():
-    """Page links, the PDF download of the introduction, and the
-    judgment pop-up, available on every step (same layout as the
-    chatbot's sidebar)."""
+    """Page links, the PDF download and the judgment pop-up."""
     sidebar_nav()
 
     sidebar_label("The introduction")
@@ -712,8 +649,6 @@ def show_sidebar():
 
 def show_welcome():
     page_header(INTRO_SUBTITLE)
-
-    # Left-aligned here: justified text leaves wide gaps in short lines
     teaser(
         "Welcome! This chatbot covers an absolute classic of European "
         "competition law: how the European Court of Justice decided "
@@ -725,13 +660,11 @@ def show_welcome():
     st.caption(f"{TOTAL_STEPS} short steps · about 3 minutes")
 
     st.write("")
-    # Skip on the left, the main action on the right (like "Continue →")
+    # Skip on the left, the main action on the right
     skip_col, _, start_col = st.columns([1.2, 1.6, 1.6])
-
     with skip_col:
         if st.button("Skip to the chatbot", key="skip_welcome", use_container_width=True):
             go_to_chatbot()
-
     with start_col:
         st.button(
             "Let's explore the case →",
@@ -746,7 +679,9 @@ def show_progress(step, current):
     until the last step)."""
     page_header(INTRO_SUBTITLE)
     st.divider()
-    step_indicator(step, current["title"])
+    render_html(
+        f'<div class="step-indicator">Step {step} of {TOTAL_STEPS} · {current["title"]}</div>'
+    )
 
     if step < TOTAL_STEPS:
         progress_col, skip_col = st.columns([5, 1])
@@ -760,11 +695,9 @@ def show_progress(step, current):
 
 
 def show_current_step(step, current):
-    """The step's content. On the last step the Court's answer (and
-    everything after it) stays hidden until the student clicks the
-    reveal button. Returns True once the content is visible."""
+    """The step's content. On the last step, the Court's answer stays
+    hidden until revealed. Returns True once the content is visible."""
     st.header(current["title"])
-
     revealed = True
 
     if step == TOTAL_STEPS:
@@ -773,7 +706,7 @@ def show_current_step(step, current):
         revealed = reveal_section()
         if revealed:
             for block in current["blocks"]:
-                render_block(block, compact=False)
+                render_block(block)
             celebrate_if_due()
     else:
         render_step(current)
@@ -815,12 +748,7 @@ def show_navigation(step):
 
     with nav_next:
         if step < TOTAL_STEPS:
-            st.button(
-                "Continue →",
-                on_click=go_next,
-                type="primary",
-                use_container_width=True,
-            )
+            st.button("Continue →", on_click=go_next, type="primary", use_container_width=True)
         elif st.button("Go to the chatbot →", type="primary", use_container_width=True):
             go_to_chatbot()
 
