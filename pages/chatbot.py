@@ -5,16 +5,20 @@ from retrieved chunks (RAG).
 How a question is answered
   1. Follow-ups ("Why?", "And the Court?") are rewritten into a
      standalone search query; standalone questions are searched as typed
-  2. The closest chunks are retrieved from the Chroma vector store
+  2. Hybrid retrieval: the query is searched against whole chunks and
+     against single paragraphs. The two rankings are merged with
+     reciprocal rank fusion, and the N_RESULTS best chunks are passed
+     to the model as whole chunks
   3. The model answers from those chunks only, citing paragraphs
-  4. A silent check finds uncited sentences and banned phrases, and
-     corrects them in up to MAX_REVISIONS passes
+  4. A check finds uncited sentences, sentences that don't name their
+     source and flagged phrases, and corrects them in up to
+     MAX_REVISIONS passes
   5. Each citation in the answer becomes a label that shows the
      paragraph text on hover (or tap)
 
 Sections
   1. Page setup and settings
-  2. Vector store
+  2. Vector store (chunks and paragraphs)
   3. Prompts
   4. Follow-up questions
   5. Answer check
@@ -23,7 +27,6 @@ Sections
   8. Page flow
 """
 
-import hashlib
 import html
 import json
 import os
@@ -44,6 +47,7 @@ from shared import (
     CHUNKS_FOLDER,
     COVERED_PARAGRAPHS,
     COVERED_PINPOINT,
+    SUBHEADING_PATTERNS,
     aglc_pinpoint,
     chunk_html,
     compact_header,
@@ -60,6 +64,7 @@ from shared import (
     split_paragraphs,
 )
 
+
 # ==================================================
 # 1. Page setup and settings
 # ==================================================
@@ -70,14 +75,20 @@ setup_page(f"{CASE_TITLE} — Chatbot", password_subtitle=CHATBOT_SUBTITLE)
 # The user has no avatar: their questions are pink bubbles instead
 USER_AVATAR = None
 
-N_RESULTS = 3              # chunks retrieved per question
+N_RESULTS = 3              # chunks passed to the model per question
+RRF_K = 60                 # reciprocal rank fusion constant (standard value)
 ANSWER_MODEL = "gpt-4o"
 REWRITE_MODEL = "gpt-4o"
 MAX_REVISIONS = 2          # correction passes the answer check may make
 
+# True while testing: shows where each chunk ranked in each search and
+# any problems the answer check could not fix. False for users.
+SHOW_DEBUG = False
+
 NOT_ADDRESSED_REPLY = (
-    f"This chatbot covers the relevant product market ({COVERED_PARAGRAPHS}), "
-    "and the retrieved paragraphs do not address this question."
+    "The passages retrieved for this question don't address it. That "
+    "doesn't necessarily mean the judgment doesn't: try rephrasing the "
+    "question, or use \"Read the judgment\" in the sidebar."
 )
 
 # Shown before the first question; display only, never sent to the model
@@ -134,14 +145,28 @@ CHUNKS = {
 STARTER_QUESTIONS = [
     "What did the applicant argue about bananas and other fresh fruit?",
     "How did the Commission respond to the applicant's argument?",
-    "What did the Court decide about the relevant product market?",
+    "Did the Court find that bananas form a market of their own?",
 ]
 
+
 # ==================================================
-# 2. Vector store
+# 2. Vector store (chunks and paragraphs)
+#
+# The same judgment text is stored at two levels:
+#   - whole chunks: each step of the reasoning as one unit, which suits
+#     questions about a step as a whole
+#   - single paragraphs: a point made in one paragraph is not diluted
+#     by the rest of its chunk
+# Both are searched, and the model always receives whole chunks, so
+# back-references ("these studies", "this particular feature") arrive
+# together with the paragraphs they refer to.
 # ==================================================
 
 os.environ["CHROMA_OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
+
+CHUNK_COLLECTION = "united_brands_chunks"
+PARAGRAPH_COLLECTION = "united_brands_paragraphs"
+
 
 def chunk_metadata(file_name):
     """Paragraph range, speaker and note for a chunk, from CHUNKS."""
@@ -163,38 +188,72 @@ def chunk_metadata(file_name):
         "note": note,
     }
 
+
+def clean_paragraph(body):
+    """One paragraph's text on a single line, without any subheading."""
+    for pattern in SUBHEADING_PATTERNS:
+        body = pattern.sub(" ", body)
+    return one_line(body)
+
+
 # show_spinner=False: a friendlier spinner is shown below instead
 @st.cache_resource(show_spinner=False)
-def get_collection():
+def load_store():
+    """Both collections, plus the chunks passed to the model. Returns
+    (chunk_collection, paragraph_collection, chunks), where chunks maps
+    each file name to its full text and metadata."""
     client = chromadb.PersistentClient(path="./my_chroma_db")
-    collection = client.get_or_create_collection(
-        name="united_brands_relevant_market",
-        embedding_function=embedding_functions.OpenAIEmbeddingFunction(
-            model_name="text-embedding-3-large",
-        ),
+    embedder = embedding_functions.OpenAIEmbeddingFunction(
+        model_name="text-embedding-3-large",
+    )
+    chunk_collection = client.get_or_create_collection(
+        name=CHUNK_COLLECTION, embedding_function=embedder
+    )
+    paragraph_collection = client.get_or_create_collection(
+        name=PARAGRAPH_COLLECTION, embedding_function=embedder
     )
 
+    chunks = {}
     folder = Path(CHUNKS_FOLDER)
     if not folder.exists():
-        return collection
+        return chunk_collection, paragraph_collection, chunks
 
-    documents, metadatas, ids = [], [], []
+    chunk_docs, chunk_metas, chunk_ids = [], [], []
+    para_docs, para_metas, para_ids = [], [], []
+
     for file in sorted(folder.glob("*.txt")):
         text = file.read_text(encoding="utf-8", errors="ignore").strip()
-        if text:
-            documents.append(text)
-            metadatas.append(chunk_metadata(file.name))
-            ids.append(hashlib.md5(file.name.encode()).hexdigest())
+        if not text:
+            continue
 
-    if documents:
-        collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
+        metadata = chunk_metadata(file.name)
+        chunks[file.name] = {"doc": text, **metadata}
 
-    return collection
+        chunk_docs.append(text)
+        chunk_metas.append(metadata)
+        chunk_ids.append(file.name)
+
+        _, pairs = split_paragraphs(text)
+        for number, body in pairs:
+            paragraph = clean_paragraph(body)
+            if paragraph:
+                para_docs.append(paragraph)
+                para_metas.append({"filename": file.name, "paragraph": int(number)})
+                para_ids.append(f"{file.name}#{number}")
+
+    if chunk_docs:
+        chunk_collection.upsert(documents=chunk_docs, metadatas=chunk_metas, ids=chunk_ids)
+    if para_docs:
+        paragraph_collection.upsert(documents=para_docs, metadatas=para_metas, ids=para_ids)
+
+    return chunk_collection, paragraph_collection, chunks
+
 
 with st.spinner("Getting the judgment ready for your questions…"):
-    collection = get_collection()
+    chunk_collection, paragraph_collection, chunks = load_store()
 
 client = OpenAI()
+
 
 def ask_model(model, messages, **options):
     """One model call (temperature 0); returns the reply text."""
@@ -203,96 +262,79 @@ def ask_model(model, messages, **options):
     )
     return response.choices[0].message.content
 
+
 # ==================================================
 # 3. Prompts
+#
+# General rules for reporting a judgment: none of them refers to this
+# case's facts, parties' arguments or paragraph numbers.
 # ==================================================
 
 SYSTEM_PROMPT = f"""
-You are a legal research assistant on the relevant PRODUCT market in
-{CASE_NAME}, {COVERED_PARAGRAPHS}. Answer ONLY from the retrieved
-paragraphs provided with each question.
+You are a legal research assistant for {CASE_NAME},
+{COVERED_PARAGRAPHS} (the relevant product market). Answer only from
+the retrieved paragraphs supplied with each question, never from
+outside knowledge.
 
-1. Source fidelity
-- Every sentence reporting the judgment must be directly supported by
-  a cited paragraph. If you cannot cite it, leave it out.
-- Report only what the paragraphs expressly say. No inferences,
-  interpretations, conclusions or implications of your own (e.g. no
-  "this suggests", "this shows", "therefore"), and no outside knowledge.
-- Paraphrase closely. Keep every qualifier and scope word exactly as
-  the paragraph has it (e.g. "only", "mainly", "very", "too", "even",
-  "not readily", "falling", "not exceeding"). Never drop or soften
-  them, and never add qualifiers of your own (e.g. don't call
-  something "limited" unless the paragraph does).
-- When a paragraph lists items (e.g. "certain characteristics, A, B
-  and C" or "consisting of X, Y and Z"), reproduce the list as given.
-  Never introduce it with "including" or "such as", which would turn
-  a closed list into an open one.
-- If the paragraphs don't address the question, reply only:
-  "{NOT_ADDRESSED_REPLY}" Don't summarise what the paragraphs contain
-  instead. If they address only part of the question, answer that part
-  and say the rest isn't addressed. Never make anything up.
+Fidelity
+- Report only what the paragraphs say. Every sentence must be
+  supported by the paragraph it cites; leave out anything you cannot
+  cite. No inferences, conclusions or summaries of your own.
+- Paraphrase closely. Keep every qualifier and scope word (e.g. "only",
+  "very", "even", "too", "sufficiently", "mainly", "not exceeding"),
+  and add none of your own.
+- Reproduce lists as the paragraph gives them: keep "such as … etc."
+  where the paragraph has it, and never open a closed list with
+  "including" or "such as".
+- Don't join statements with causal words ("because", "as", "so",
+  "due to", "which means", "indicating") unless the paragraph itself
+  states that link. You may follow the judgment's own back-references
+  ("these studies", "this feature", "these months") to what they
+  refer to.
 
-2. Attribution
-- Each retrieved chunk begins with a "Source:" line stating whose
-  position its paragraphs set out, and sometimes a "Note:" line that
-  attributes individual paragraphs more precisely. Follow the Note
-  where there is one, and never attribute a statement to anyone else.
-- Every sentence must OPEN by naming its source: "The applicant
-  argued…", "The Commission submitted…", "The Court found…".
-- For evidence, name who relied on it: "According to the statistics
-  relied on by the applicant, …", "The Court referred to two FAO
-  studies…". Don't say who produced, provided or carried out a piece
-  of evidence unless the paragraphs or the Note expressly say so.
-  This applies even when the question asks what the evidence
-  "shows": never restate a party's evidence in the judgment's own
-  words without naming that party first.
-- If the paragraphs contain another party's or the Court's response
-  to the same point, report it too, without weighing it yourself.
+Attribution
+- Open every sentence that reports the judgment by naming its source:
+  the applicant, the Commission, the Court, or a piece of evidence
+  (e.g. "According to the studies relied on by the applicant, …").
+  Never open it with "This", "These", "It", "However" or "Although".
+- Follow each chunk's "Source:" and "Note:" lines. Where a paragraph
+  reports what studies or statistics show, attribute the content to
+  them, even within the Court's reasoning, and don't say who produced
+  them unless the paragraph does.
+- A statement of what must be shown ("for X to be …, it must be
+  possible …") sets a test; it is not a finding. Report it as the
+  requirement the Court set, and report findings separately, where a
+  paragraph states them.
+- Where the paragraphs contain another party's or the Court's response
+  to the same point, report it too, without weighing it.
 
-3. Answering the question asked
-- Follow-up questions may come with an "Interpreted as:" line. Use it
-  to understand what the user means.
-- Answer the question actually asked, not the previous one. Never
-  simply repeat an earlier answer.
-- If the question asks "why", report only reasons that a paragraph
-  itself states as reasons (e.g. with "since", "owing to", "because",
-  or a legal test such as "for … it must be possible …"). Never create
-  a causal link between separate paragraphs yourself. If no retrieved
-  paragraph states a reason, say so.
-- Ask the user to clarify only if the question could reasonably refer
-  to more than one point in the paragraphs. Otherwise, answer it.
+Answering
+- Answer the question asked, not an earlier one. An "Interpreted as:"
+  line explains a follow-up. For "why", give only reasons a paragraph
+  itself states.
+- If the question assumes something that a retrieved paragraph
+  contradicts, correct it from that paragraph before anything else:
+  say what the paragraph states instead and cite it (e.g. "The Court
+  did not find X; it found that Y [n]").
+- You only see the passages retrieved for this question, not the
+  whole judgment. Never conclude from a missing passage that the Court
+  or the judgment did not decide, say or address something; only a
+  retrieved paragraph that states the opposite can show that.
+- If the passages cover part of the question, answer that part and
+  end with one sentence saying the passages retrieved for this
+  question don't cover the rest. If they don't cover it at all, reply
+  only, once: "{NOT_ADDRESSED_REPLY}"
+- Ask for clarification only if the question could refer to more than
+  one point in the paragraphs.
 
-4. Layout
-- If the answer has more than two sentences, write it in short
-  paragraphs separated by a blank line. Start a new paragraph when the
-  answer moves to a different party (the applicant, the Commission,
-  the Court) or to a different point.
-- Plain prose only: no headings, bullet points or bold text.
-
-5. Citation (AGLC)
-Each paragraph in the context starts with its number, e.g. "[29]".
-Cite the specific paragraph(s) after EVERY sentence that reports the
-judgment, even when consecutive sentences rely on the same paragraph.
-Don't open with an uncited introductory or summary sentence: start
-directly with a cited statement. Never cite a whole chunk's range,
-and never cite a statement that something is not addressed:
-- one paragraph: [29]
-- consecutive: [28]–[30] (en dash, no spaces)
-- non-consecutive: [23], [26]
-
-Example
-Q: "What did the FAO studies show about apples?"
-Good: "The applicant relied on FAO studies which, it submitted, show
-that the price of apples has a statistically appreciable impact on
-banana consumption in the Federal Republic of Germany [15].
-
-The Court found only a relative degree of substitutability between
-bananas and apples [29]."
-Bad: "FAO studies show that apple prices affect banana consumption
-[15]. This shows that apples and bananas compete in the same market."
-(Presents the applicant's evidence as fact and adds an uncited
-inference.)
+Format
+- Lead with the direct answer. Plain prose, no headings, bullets or
+  bold; short paragraphs, starting a new one for each party or point.
+- Cite (AGLC) after every sentence that reports the judgment, using
+  the specific paragraph(s): [29], [28]–[30], [23], [26]. Don't cite a
+  statement that something isn't covered.
 """
+
 
 REWRITE_PROMPT = """
 You prepare search queries for a chatbot that searches paragraphs
@@ -305,14 +347,22 @@ FOLLOW-UP:
   conversation, even if it relates to a topic discussed earlier. Never
   narrow or extend a standalone message with the earlier topic.
 - FOLLOW-UP: it only makes sense with the conversation, because it
-  relies on words such as "that", "it", "they", "and the Court?" or a
-  bare "why?".
+  relies on words such as "that", "it", "they", "them", "and the
+  Court?" or a bare "why?".
 
-For a FOLLOW-UP, write one standalone search query that replaces those
-references with the SPECIFIC subject from the conversation (which
-party, which argument, which fruit, figure or piece of evidence),
-named concretely. Don't answer the question, don't add conclusions
-that aren't in the conversation, and never add the case name.
+For a FOLLOW-UP, write one standalone search query:
+- Replace ONLY the words that point back ("it", "them", "that", "and
+  the Court?") with the SPECIFIC subject they refer to (which party,
+  argument, fruit, figure or piece of evidence), named concretely.
+- Keep the rest of the user's wording. Don't add any other terms from
+  the conversation, and in particular no terms taken from the
+  assistant's earlier answers (e.g. "substitutability",
+  "interchangeability", "cross-elasticity") unless the user used them.
+  Such terms belong to one party's reasoning and pull the search
+  towards that party.
+- For a bare "why?", name the specific point being asked about.
+- Don't answer the question, don't add conclusions that aren't in the
+  conversation, and never add the case name.
 
 Respond in JSON only, in one of these two forms:
 {"standalone": true}
@@ -332,6 +382,12 @@ interchangeable with other fresh fruit.
 Latest message: Why?
 Output: {"standalone": false, "query": "Why did the applicant argue that bananas are reasonably interchangeable with other fresh fruit?"}
 
+Conversation: the user asked what the Court found about peaches and
+table grapes; the assistant described the seasonal substitutability
+the studies showed in West Germany.
+Latest message: What did the Commission say about them?
+Output: {"standalone": false, "query": "What did the Commission say about peaches and table grapes?"}
+
 Conversation: the user asked about peaches and table grapes; the
 assistant described their effect on banana prices in the summer
 months.
@@ -339,26 +395,28 @@ Latest message: What did the Court find about seasonal substitution?
 Output: {"standalone": true}
 """
 
+
 REVISE_PROMPT = """
-You correct answers written by a legal research assistant. You receive
-the retrieved paragraphs, the question, a draft answer and a list of
-problems found in it. Fix ONLY those problems:
+You correct a draft answer written by a legal research assistant. You
+receive the retrieved paragraphs, the question, the draft and a list
+of problems found in it. Fix ONLY those problems:
 
-- A sentence without a paragraph citation: add the correct citation
-  from the paragraphs in AGLC format ([29], [28]–[30], [23], [26]), or
-  delete the sentence if no paragraph supports it.
-- "including" or "such as": remove the word and reproduce the list
-  exactly as the paragraph gives it, unless the paragraph itself uses
-  that word.
-- "therefore", "thus", "this suggests", "this shows", "this
-  indicates", "in other words": remove the connector. Keep a causal
-  link only if the cited paragraph itself states it, and then
-  attribute it (e.g. "The Court stated that, since …").
+- A sentence without a citation: add the correct paragraph citation
+  in AGLC format ([29], [28]–[30], [23], [26]), or delete the sentence
+  if no paragraph supports it.
+- A sentence that doesn't name its source: rewrite its opening so it
+  names who says it (the applicant, the Commission, the Court, or a
+  piece of evidence), as the cited paragraph attributes it.
+- A flagged word or phrase: remove it. For "including", "includes" or
+  "such as", reproduce the list exactly as the paragraph gives it.
+  For a connector ("therefore", "however", "indicating", "due to" …),
+  keep a causal link only if the cited paragraph itself states it.
 
-Change nothing else: keep every attribution, qualifier, citation,
-all other wording and the paragraph breaks exactly as they are.
-Return only the corrected answer.
+Change nothing else: keep every attribution, qualifier, citation, all
+other wording and the paragraph breaks. Return only the corrected
+answer.
 """
+
 
 # ==================================================
 # 4. Follow-up questions
@@ -378,6 +436,7 @@ FOLLOW_UP_OPENERS = {"and", "but", "so", "also", "then", "what about"}
 
 MIN_STANDALONE_WORDS = 6
 
+
 def clearly_standalone(query):
     """True if the question is long enough, has no continuing opener
     and no word that refers back to the conversation."""
@@ -388,6 +447,7 @@ def clearly_standalone(query):
     if words[0] in FOLLOW_UP_OPENERS or " ".join(words[:2]) in FOLLOW_UP_OPENERS:
         return False
     return not any(word in FOLLOW_UP_MARKERS for word in words)
+
 
 def make_search_query(query, history):
     """Return (search_query, was_rewritten). Falls back to the original
@@ -422,37 +482,63 @@ def make_search_query(query, history):
     except Exception:
         return query, False
 
+
 # ==================================================
 # 5. Answer check: find what the prompt can't reliably prevent, then
 # correct it in up to MAX_REVISIONS targeted passes
 # ==================================================
 
+# Flagged only if the retrieved paragraphs don't use the phrase
+# themselves (e.g. "such as" is fine where the judgment says "such as")
 FLAGGED_PHRASES = [
-    "including", "such as", "therefore", "thus",
-    "this suggests", "this shows", "this indicates", "in other words",
+    "including", "include", "includes", "such as",
+    "therefore", "thus", "however", "due to", "in other words",
+    "this suggests", "this shows", "this indicates", "indicating",
+    "this means", "which means", "which allows", "allowing",
 ]
 
-CITATION_PATTERN = re.compile(r"\[\d+\]")
+# Sentence openings that don't name a source
+UNATTRIBUTED_OPENERS = {
+    "this", "these", "that", "those", "it", "they", "such",
+    "although", "even", "consequently",
+}
 
-def find_issues(answer):
+CITATION_PATTERN = re.compile(r"\[\d+\]")
+SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+NOT_COVERED_PATTERN = re.compile(r"\b(address|cover)", re.IGNORECASE)
+
+
+def contains(phrase, text):
+    return re.search(rf"\b{re.escape(phrase)}\b", text) is not None
+
+
+def find_issues(answer, source_text=""):
     """A list of problems in the answer (empty if none)."""
     if answer.strip().startswith(NOT_ADDRESSED_REPLY[:40]):
         return []
 
+    answer_lower, source_lower = answer.lower(), source_text.lower()
     issues = [
-        f'The answer uses "{phrase}".'
+        f'The answer uses "{phrase}", which the paragraphs do not use.'
         for phrase in FLAGGED_PHRASES
-        if re.search(rf"\b{re.escape(phrase)}\b", answer.lower())
+        if contains(phrase, answer_lower) and not contains(phrase, source_lower)
     ]
 
-    # Questions and "not addressed" sentences need no citation
-    for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])", answer.strip()):
-        is_question = sentence.rstrip().endswith("?")
-        is_not_addressed = "address" in sentence.lower()
-        if not is_question and not is_not_addressed and not CITATION_PATTERN.search(sentence):
+    for sentence in SENTENCE_BREAK.split(answer.strip()):
+        sentence = sentence.strip()
+        # Questions and "not covered" sentences need no citation or speaker
+        if not sentence or sentence.endswith("?") or NOT_COVERED_PATTERN.search(sentence):
+            continue
+
+        if not CITATION_PATTERN.search(sentence):
             issues.append(f'This sentence has no paragraph citation: "{sentence}"')
 
+        first_word = re.match(r"[A-Za-z']+", sentence)
+        if first_word and first_word.group(0).lower() in UNATTRIBUTED_OPENERS:
+            issues.append(f'This sentence does not name its source: "{sentence}"')
+
     return issues
+
 
 def revise_answer(answer, context, question, issues):
     """One correction pass. Returns (text, succeeded)."""
@@ -477,9 +563,12 @@ def revise_answer(answer, context, question, issues):
     except Exception:
         return answer, False
 
-def check_and_correct(answer, context, question):
-    """Silently check the answer and correct it if needed."""
-    issues = find_issues(answer)
+
+def check_and_correct(answer, context, question, source_text):
+    """Check the answer and correct it if needed. Returns (answer,
+    remaining issues), so problems that survive can be shown in debug
+    mode instead of failing silently."""
+    issues = find_issues(answer, source_text)
 
     for _ in range(MAX_REVISIONS):
         if not issues:
@@ -487,27 +576,78 @@ def check_and_correct(answer, context, question):
         answer, succeeded = revise_answer(answer, context, question, issues)
         if not succeeded:
             break
-        issues = find_issues(answer)
+        issues = find_issues(answer, source_text)
 
-    return answer
+    return answer, issues
+
 
 # ==================================================
 # 6. Retrieval and answering
 # ==================================================
 
+def rank_by_chunk(text):
+    """All chunks, closest whole chunk first."""
+    results = chunk_collection.query(
+        query_texts=[text], n_results=chunk_collection.count()
+    )
+    return [meta.get("filename") for meta in results["metadatas"][0]]
+
+
+def rank_by_paragraph(text):
+    """All chunks, ordered by their closest paragraph. Returns
+    (order, best), where best maps each chunk to that paragraph."""
+    results = paragraph_collection.query(
+        query_texts=[text], n_results=paragraph_collection.count()
+    )
+    order, best = [], {}
+    for meta in results["metadatas"][0]:
+        name = meta.get("filename")
+        if name not in best:
+            best[name] = meta.get("paragraph")
+            order.append(name)
+    return order, best
+
+
+def position(order, name):
+    """1-based position of a chunk in a ranking, or None."""
+    return order.index(name) + 1 if name in order else None
+
+
 def retrieve_sources(search_query):
-    """The N_RESULTS closest chunks, closest first (shown now and
-    stored with the answer)."""
-    results = collection.query(query_texts=[search_query], n_results=N_RESULTS)
+    """Hybrid retrieval: rank the chunks by whole-chunk search and by
+    paragraph search, merge the two rankings with reciprocal rank
+    fusion, and return the N_RESULTS best chunks. Each source records
+    its positions, for debug mode."""
+    if chunk_collection.count() == 0 or paragraph_collection.count() == 0:
+        raise RuntimeError("The vector store is empty.")
+
+    chunk_order = rank_by_chunk(search_query)
+    paragraph_order, best = rank_by_paragraph(search_query)
+
+    # Reciprocal rank fusion: 1 / (k + rank) from each ranking, added up
+    scores = {}
+    for order in (chunk_order, paragraph_order):
+        for rank, name in enumerate(order, start=1):
+            scores[name] = scores.get(name, 0) + 1 / (RRF_K + rank)
+
+    ranked = sorted(
+        (name for name in scores if name in chunks),
+        key=lambda name: (-scores[name], position(chunk_order, name) or 99),
+    )
+
     return [
         {
-            "paragraphs": meta.get("paragraphs"),
-            "speaker": meta.get("speaker"),
-            "note": meta.get("note"),
-            "doc": doc,
+            "paragraphs": chunks[name].get("paragraphs"),
+            "speaker": chunks[name].get("speaker"),
+            "note": chunks[name].get("note"),
+            "doc": chunks[name]["doc"],
+            "chunk_rank": position(chunk_order, name),
+            "paragraph_rank": position(paragraph_order, name),
+            "matched": aglc_pinpoint(best[name]) if name in best else None,
         }
-        for doc, meta in zip(results["documents"][0], results["metadatas"][0])
+        for name in ranked[:N_RESULTS]
     ]
+
 
 def chunk_for_model(source):
     """A chunk headed by its speaker (and note, if any)."""
@@ -518,8 +658,10 @@ def chunk_for_model(source):
         header.append(f"Note: {source['note']}")
     return "\n".join(header + [source["doc"]])
 
-def generate_answer(history, context, question_block):
-    """Ask the model, then check and correct its answer."""
+
+def generate_answer(history, context, question_block, source_text):
+    """Ask the model, then check and correct its answer. Returns
+    (answer, remaining issues)."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         *history,
@@ -529,7 +671,8 @@ def generate_answer(history, context, question_block):
         },
     ]
     answer = ask_model(ANSWER_MODEL, messages)
-    return check_and_correct(answer, context, question_block)
+    return check_and_correct(answer, context, question_block, source_text)
+
 
 def answer_question(query):
     """One question, start to finish: show it, search, answer, show
@@ -556,6 +699,7 @@ def answer_question(query):
 
     shown_query = search_query if was_rewritten else None
     context = "\n\n---\n\n".join(chunk_for_model(s) for s in sources)
+    source_text = "\n".join(s["doc"] for s in sources)
     question_block = query
     if was_rewritten:
         question_block += f"\n\nInterpreted as: {search_query}"
@@ -563,23 +707,32 @@ def answer_question(query):
     with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         try:
             with st.spinner("Reading the paragraphs…"):
-                answer = generate_answer(history, context, question_block)
+                answer, issues = generate_answer(history, context, question_block, source_text)
             render_answer(answer, sources)
-            render_sources(sources, shown_query)
+            render_sources(sources, shown_query, issues)
         except Exception:
             st.error("Something went wrong generating a response. Please try again in a moment.")
             st.stop()
 
     st.session_state.messages.append(
-        {"role": "assistant", "content": answer, "sources": sources, "search_query": shown_query}
+        {
+            "role": "assistant",
+            "content": answer,
+            "sources": sources,
+            "search_query": shown_query,
+            "issues": issues,
+        }
     )
+
 
 # ==================================================
 # 7. Display helpers
 # ==================================================
 
-# A pinpoint in an answer: [29], or a range [28]–[30]
-PINPOINT_PATTERN = re.compile(r"\[(\d+)\](?:\s*[–-]\s*\[(\d+)\])?")
+# A pinpoint in an answer: [29], or a range [28]–[30], plus any
+# punctuation straight after it (kept on the same line as the label)
+PINPOINT_PATTERN = re.compile(r"\[(\d+)\](?:\s*[–-]\s*\[(\d+)\])?([.,;:]?)")
+
 
 def paragraph_texts(sources):
     """{paragraph number: text} for every retrieved paragraph."""
@@ -590,6 +743,7 @@ def paragraph_texts(sources):
             texts[int(number)] = one_line(text)
     return texts
 
+
 def render_answer(answer, sources):
     """The answer, with every pinpoint turned into a pink label that
     shows the paragraph text on hover or tap (plain label if the
@@ -599,41 +753,69 @@ def render_answer(answer, sources):
     def to_label(match):
         first = int(match.group(1))
         last = int(match.group(2) or first)
-        pinpoint = match.group(0)
+        punctuation = match.group(3)
+        pinpoint = match.group(0)[: len(match.group(0)) - len(punctuation)]
 
         numbers = [n for n in range(first, last + 1) if n in texts]
         if not numbers:
-            return f'<span class="cite">{pinpoint}</span>'
-
-        paragraphs = "".join(
-            f'<span class="cite-paragraph"><b>[{n}]</b> {html_safe(texts[n])}</span>'
-            for n in numbers
-        )
-        return (
-            f'<span class="cite" tabindex="0">{pinpoint}'
-            f'<span class="cite-pop"><span class="cite-pop-inner">{paragraphs}</span></span>'
-            f"</span>"
-        )
+            label = f'<span class="cite">{pinpoint}</span>'
+        else:
+            paragraphs = "".join(
+                f'<span class="cite-paragraph"><b>[{n}]</b> {html_safe(texts[n])}</span>'
+                for n in numbers
+            )
+            label = (
+                f'<span class="cite" tabindex="0">{pinpoint}'
+                f'<span class="cite-pop"><span class="cite-pop-inner">{paragraphs}</span></span>'
+                f"</span>"
+            )
+        return f'<span class="cite-wrap">{label}{punctuation}</span>'
 
     render_html(PINPOINT_PATTERN.sub(to_label, answer))
 
-def render_sources(sources, search_query=None):
-    """The "Sources" expander: one card per retrieved chunk, closest
-    match first, laid out like the judgment. Shows the rewritten search
-    query, if there was one."""
+
+def source_title(rank, source):
+    """Card title: 'Match 1 · [34]–[35]', plus, in debug mode, where the
+    chunk ranked in each search."""
+    parts = [f"Match {rank}", source.get("paragraphs")]
+
+    if SHOW_DEBUG:
+        if source.get("chunk_rank"):
+            parts.append(f"chunk search #{source['chunk_rank']}")
+        if source.get("paragraph_rank"):
+            via = f" via {source['matched']}" if source.get("matched") else ""
+            parts.append(f"paragraph search #{source['paragraph_rank']}{via}")
+
+    return " · ".join(p for p in parts if p)
+
+
+def render_sources(sources, search_query=None, issues=None):
+    """The "Sources" expander: one card per retrieved chunk, best match
+    first, laid out like the judgment. Shows the rewritten search query,
+    if there was one, and in debug mode any problems the answer check
+    could not fix."""
     pinpoints = [s["paragraphs"] for s in sources if s.get("paragraphs")]
 
     with st.expander(" · ".join(["Sources"] + pinpoints)):
         if search_query:
             muted_note(f"Searched for: {html.escape(search_query)}")
 
+        if SHOW_DEBUG:
+            if issues:
+                muted_note(
+                    "Debug · problems left after the answer check: "
+                    + html_safe(" | ".join(issues))
+                )
+            else:
+                muted_note("Debug · answer check: no problems left.")
+
         for rank, source in enumerate(sources, start=1):
-            title = " · ".join(p for p in [f"Match {rank}", source.get("paragraphs")] if p)
             # One line: Streamlit reads indented lines as a code block
             render_html(
-                f'<div class="chunk-card"><div class="chunk-title">{title}</div>'
+                f'<div class="chunk-card"><div class="chunk-title">{source_title(rank, source)}</div>'
                 f'{chunk_html(source.get("doc", ""))}</div>'
             )
+
 
 def show_past_message(message):
     """Replay one stored message, with citation labels and sources."""
@@ -642,15 +824,21 @@ def show_past_message(message):
     with st.chat_message(message["role"], avatar=avatar):
         if message["role"] == "assistant" and message.get("sources"):
             render_answer(message["content"], message["sources"])
-            render_sources(message["sources"], message.get("search_query"))
+            render_sources(
+                message["sources"],
+                message.get("search_query"),
+                message.get("issues"),
+            )
         else:
             st.write(message["content"])
+
 
 def type_out(text):
     """Yield the text word by word, so st.write_stream 'types' it."""
     for word in text.split(" "):
         yield word + " "
         time.sleep(WELCOME_WORD_DELAY)
+
 
 def show_welcome():
     """Welcome bubble with the starter questions underneath. Animated
@@ -668,14 +856,15 @@ def show_welcome():
             else:
                 st.write(WELCOME_MESSAGE)
 
-    for position, question in enumerate(STARTER_QUESTIONS):
+    for number, question in enumerate(STARTER_QUESTIONS):
         if animate:
             time.sleep(WELCOME_BUTTON_DELAY)
-        if st.button(question, key=f"starter_{position}"):
+        if st.button(question, key=f"starter_{number}"):
             st.session_state.pending_query = question
             st.rerun()
 
     st.session_state.welcome_shown = True
+
 
 # ==================================================
 # 8. Page flow
@@ -723,4 +912,3 @@ for message in st.session_state.messages:
 
 if query:
     answer_question(query)
- 

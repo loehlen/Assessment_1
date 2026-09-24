@@ -665,6 +665,13 @@ div[data-testid="stChatMessage"]:has([aria-label="Chat message from user"])
     display: none;
 }
 
+/* While the avatar image loads, the browser would show its alt text
+   ("assistant"), cut off to "assi"; make that fallback text invisible */
+div[data-testid="stChatMessage"] [data-testid^="stChatMessageAvatar"],
+div[data-testid="stChatMessage"] [data-testid^="stChatMessageAvatar"] img {
+    color: transparent;
+}
+
 /* Short chat text (questions, welcome) left-aligned, not justified */
 div[data-testid="stChatMessage"]:has([aria-label="Chat message from user"])
     [data-testid="stMarkdownContainer"] p,
@@ -736,6 +743,11 @@ div[data-testid="stChatMessage"] div[data-testid="stExpander"] summary p {
    Show the paragraph text on hover, or on tap (the label is
    focusable). The box's transparent bottom padding bridges the gap,
    so moving the mouse onto it keeps it open. */
+
+/* A label and the punctuation after it stay on one line */
+.cite-wrap {
+    white-space: nowrap;
+}
 
 .cite {
     position: relative;
