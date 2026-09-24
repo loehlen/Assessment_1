@@ -41,16 +41,19 @@ from shared import (
     CASE_TITLE,
     COVERED_PINPOINT,
     EXCERPT,
-    HEADING_TITLE,
     INTRO_SUBTITLE,
     PALETTE,
+    banana,
     case_card,
     cite,
     go_to_chatbot,
     init_state,
+    judgment_sidebar_section,
     page_header,
     render_html,
     setup_page,
+    sidebar_label,
+    sidebar_nav,
     teaser,
 )
 
@@ -462,7 +465,10 @@ def reveal_section():
         return False
 
     if guess == CORRECT_GUESS:
-        teaser("🎉 <strong>Correct! Bananas are a market of their own.</strong>")
+        teaser(
+            f'{banana("inline-icon")}<strong>Correct! Bananas are a market '
+            "of their own.</strong>"
+        )
     elif guess:
         teaser("<strong>Not quite. The Court went the other way.</strong>")
 
@@ -470,7 +476,8 @@ def reveal_section():
 
 
 def celebrate_if_due():
-    """Balloons once, straight after a correct reveal."""
+    """Balloons once, straight after a correct reveal (recoloured into
+    the app's mauve pinks by the stylesheet in shared.py)."""
     if st.session_state.celebrate:
         st.balloons()
         st.session_state.celebrate = False
@@ -690,22 +697,27 @@ def go_back():
 
 
 def show_sidebar():
-    """PDF download, available on every step."""
+    """Page links, the PDF download of the introduction, and the
+    judgment pop-up, available on every step (same layout as the
+    chatbot's sidebar)."""
+    sidebar_nav()
+
+    sidebar_label("The introduction")
     with st.sidebar:
-        st.markdown("**Take the introduction with you**")
         pdf_download_button(key="pdf_sidebar")
         st.caption("The whole introduction in one document, with paragraph citations.")
 
+    judgment_sidebar_section()
+
 
 def show_welcome():
-    st.title(HEADING_TITLE)
-    st.subheader("Welcome to the chatbot")
+    page_header(INTRO_SUBTITLE)
 
     # Left-aligned here: justified text leaves wide gaps in short lines
     teaser(
-        "This chatbot covers an absolute classic of European competition "
-        "law: how the European Court of Justice decided whether bananas "
-        "form a market of their own.",
+        "Welcome! This chatbot covers an absolute classic of European "
+        "competition law: how the European Court of Justice decided "
+        "whether bananas form a market of their own.",
         "Before we get into the chatbot, let's first explore what the "
         "case is about.",
         align_left=True,

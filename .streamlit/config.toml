@@ -1,4 +1,9 @@
 [theme]
+# Always use the light theme, even if a student's computer is set to
+# dark mode (the app's pink cards and white buttons are designed for
+# a light background)
+base = "light"
+
 # Accent colour for Streamlit's own widgets (radio buttons, focus
 # rings, links), matching the pink used in shared.py
 primaryColor = "#9B6574"
@@ -6,3 +11,9 @@ primaryColor = "#9B6574"
 # Very light pink instead of Streamlit's grey, used for the sidebar,
 # the chat input box and other panels
 secondaryBackgroundColor = "#FCF9FA"
+
+[client]
+# Hide Streamlit's automatic page list (it shows the file names
+# "home" and "chatbot"); shared.py draws the page links instead,
+# as "Introduction" and "Chatbot"
+showSidebarNavigation = false

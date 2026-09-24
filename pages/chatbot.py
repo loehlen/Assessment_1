@@ -37,20 +37,24 @@ from chromadb.utils import embedding_functions
 from openai import OpenAI
 
 from shared import (
+    ASSISTANT_AVATAR,
     CASE_NAME,
     CASE_TITLE,
     CHATBOT_SUBTITLE,
+    CHUNKS_FOLDER,
     COVERED_PARAGRAPHS,
     COVERED_PINPOINT,
-    PAGE_ICON,
     aglc_pinpoint,
+    chunk_html,
     compact_header,
-    go_home,
     init_state,
+    judgment_sidebar_section,
     muted_note,
     page_header,
     render_html,
     setup_page,
+    sidebar_label,
+    sidebar_nav,
 )
 
 
@@ -61,10 +65,13 @@ from shared import (
 # Password shared with home.py: entering it once unlocks both pages
 setup_page(f"{CASE_TITLE} — Chatbot", password_subtitle=CHATBOT_SUBTITLE)
 
-ASSISTANT_AVATAR = PAGE_ICON
-USER_AVATAR = "🙋‍♀️"
+# The chatbot's avatar is the pink banana (ASSISTANT_AVATAR, from
+# shared.py). The user has no visible avatar: their questions appear as
+# right-aligned pink bubbles instead (styled in shared.py).
+USER_AVATAR = None
 
-CHUNKS_FOLDER = "Chunks - United Brands v Commission - Relevant Product Market"
+# CHUNKS_FOLDER comes from shared.py, so the judgment pop-up reads
+# exactly the same files as the vector store
 N_RESULTS = 3
 
 ANSWER_MODEL = "gpt-4o"
@@ -94,8 +101,8 @@ WELCOME_BUTTON_DELAY = 0.25
 
 # Each chunk file covers one step of the reasoning. For each file:
 # - "paragraphs": range (first, last), shown on the source cards
-# - "speaker": whose position the chunk sets out, shown on the cards
-#   and given to the model (paragraph text often doesn't name it)
+# - "speaker": whose position the chunk sets out, given to the model
+#   only (paragraph text often doesn't name it); not shown on screen
 # - "note" (optional): finer attribution for the model where a chunk
 #   mixes voices or reads like fact but is a party's evidence
 # Keyed by filename, so the mapping can't silently desync if files are
@@ -297,7 +304,14 @@ paragraphs provided with each question.
 - Ask the user to clarify only if the question could reasonably refer
   to more than one point in the paragraphs. Otherwise, answer it.
 
-4. Citation (AGLC)
+4. Layout
+- If the answer has more than two sentences, write it in short
+  paragraphs separated by a blank line. Start a new paragraph when the
+  answer moves to a different party (the applicant, the Commission,
+  the Court) or to a different point.
+- Plain prose only: no headings, bullet points or bold text.
+
+5. Citation (AGLC)
 Each paragraph in the context starts with its number, e.g. "[29]".
 Cite the specific paragraph(s) after EVERY sentence that reports the
 judgment, even when consecutive sentences rely on the same paragraph.
@@ -312,9 +326,10 @@ Example
 Q: "What did the FAO studies show about apples?"
 Good: "The applicant relied on FAO studies which, it submitted, show
 that the price of apples has a statistically appreciable impact on
-banana consumption in the Federal Republic of Germany [15]. The Court
-found only a relative degree of substitutability between bananas and
-apples [29]."
+banana consumption in the Federal Republic of Germany [15].
+
+The Court found only a relative degree of substitutability between
+bananas and apples [29]."
 Bad: "FAO studies show that apple prices affect banana consumption
 [15]. This shows that apples and bananas compete in the same market."
 (Presents the applicant's evidence as fact and adds an uncited
@@ -384,8 +399,9 @@ problems found in it. Fix ONLY those problems:
   link only if the cited paragraph itself states it, and then
   attribute it (e.g. "The Court stated that, since …").
 
-Change nothing else: keep every attribution, qualifier, citation and
-all other wording. Return only the corrected answer.
+Change nothing else: keep every attribution, qualifier, citation,
+all other wording and the paragraph breaks exactly as they are.
+Return only the corrected answer.
 """
 
 
@@ -563,8 +579,8 @@ def check_and_correct(answer, context, question):
 # ==================================================
 
 def retrieve_sources(search_query):
-    """The N_RESULTS closest chunks, as a plain list of sources
-    (displayed now AND stored with the answer)."""
+    """The N_RESULTS closest chunks, closest first, as a plain list of
+    sources (displayed now AND stored with the answer)."""
     results = collection.query(query_texts=[search_query], n_results=N_RESULTS)
     return [
         {
@@ -630,7 +646,7 @@ def answer_question(query):
 
     # Follow-ups are rewritten into standalone questions before
     # searching; standalone questions are searched exactly as typed
-    with st.spinner("Understanding your question..."):
+    with st.spinner("Understanding your question…"):
         search_query, was_rewritten = make_search_query(query, history)
 
     try:
@@ -653,7 +669,7 @@ def answer_question(query):
 
     with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
         try:
-            with st.spinner("Generating response..."):
+            with st.spinner("Reading the paragraphs…"):
                 answer = generate_answer(history, context, question_block)
             render_answer(answer, sources)
             render_sources(sources, shown_query)
@@ -711,7 +727,8 @@ def popover_safe(text):
 def render_answer(answer, sources):
     """The answer text, with every pinpoint ([29] or [28]–[30]) turned
     into a pink label that shows the paragraph text on hover or tap.
-    Pinpoints for paragraphs that weren't retrieved stay plain labels."""
+    Pinpoints for paragraphs that weren't retrieved stay plain labels.
+    Blank lines in the answer become separate paragraphs on screen."""
 
     texts = paragraph_texts(sources)
 
@@ -739,24 +756,16 @@ def render_answer(answer, sources):
     render_html(PINPOINT_PATTERN.sub(to_label, answer))
 
 
-def first_paragraph(source):
-    """The first paragraph number of a source, e.g. 12 for [12]–[13],
-    for listing sources in the order they appear in the judgment."""
-    match = re.search(r"\d+", source.get("paragraphs") or "")
-    return int(match.group()) if match else 0
-
-
 def render_sources(sources, search_query=None):
-    """The sources expander under an answer. Its label lists the
-    paragraphs used, in judgment order, so students can see where the
-    answer comes from without opening it. If the question was
-    rewritten for retrieval, show what was searched."""
+    """The sources expander under an answer. Its label and the cards
+    both list the retrieved chunks in MATCH order (closest first), so
+    it's visible how well retrieval worked. Each card shows the match
+    number and pinpoint, then the chunk text laid out exactly like the
+    judgment (headings, and paragraph numbers in the margin). The
+    speaker isn't shown: it is there for the model only. If the
+    question was rewritten for retrieval, show what was searched."""
 
-    pinpoints = [
-        s["paragraphs"]
-        for s in sorted(sources, key=first_paragraph)
-        if s.get("paragraphs")
-    ]
+    pinpoints = [s["paragraphs"] for s in sources if s.get("paragraphs")]
     label = " · ".join(["Sources"] + pinpoints)
 
     with st.expander(label):
@@ -766,18 +775,17 @@ def render_sources(sources, search_query=None):
 
         for rank, source in enumerate(sources, start=1):
 
-            parts = [f"Match {rank}", source.get("speaker"), source.get("paragraphs")]
+            parts = [f"Match {rank}", source.get("paragraphs")]
             title = " · ".join(part for part in parts if part)
 
+            # One line, no indentation: Streamlit would read indented
+            # lines inside the markdown as a code block
             render_html(
-                f"""
-                <div class="chunk-card">
-                    <div class="chunk-title">{title}</div>
-                </div>
-                """
+                f'<div class="chunk-card">'
+                f'<div class="chunk-title">{title}</div>'
+                f'{chunk_html(source.get("doc", ""))}'
+                f"</div>"
             )
-
-            st.caption(source.get("doc", ""))
 
 
 def show_past_message(message):
@@ -818,11 +826,14 @@ def show_welcome():
         # Let the page settle (e.g. the password screen clear) first
         time.sleep(WELCOME_START_DELAY)
 
-    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-        if animate:
-            st.write_stream(type_out(WELCOME_MESSAGE))
-        else:
-            st.write(WELCOME_MESSAGE)
+    # The container's key gives the welcome its own CSS class
+    # (st-key-welcome), so it can be left-aligned in shared.py
+    with st.container(key="welcome"):
+        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+            if animate:
+                st.write_stream(type_out(WELCOME_MESSAGE))
+            else:
+                st.write(WELCOME_MESSAGE)
 
     for position, question in enumerate(STARTER_QUESTIONS):
         if animate:
@@ -845,13 +856,22 @@ init_state(
 )
 
 # Sidebar first: Streamlit draws the page in code order, so this keeps
-# the sidebar from waiting for the welcome animation
-if st.sidebar.button("← Back to case overview"):
-    go_home()
+# the sidebar from waiting for the welcome animation. Page links at the
+# top (the "Introduction" link replaces the old "Back to case overview"
+# button), then the same labelled sections as on the intro page.
+sidebar_nav()
 
-if st.sidebar.button("Reset conversation"):
+sidebar_label("Conversation")
+if st.sidebar.button(
+    "Reset conversation", key="reset", use_container_width=True
+):
     st.session_state.messages = []
     st.rerun()
+st.sidebar.caption("Clears the chat so you can start afresh.")
+
+# Opens the judgment text in a pop-up; closing it leaves the
+# conversation exactly as it was
+judgment_sidebar_section()
 
 # Read the question first, so the header already knows whether a
 # conversation is under way (the chat input stays pinned to the bottom
