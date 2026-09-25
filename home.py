@@ -660,11 +660,13 @@ def pdf_download_button(key):
 #
 # The main area has three fixed slots, in the same place on every
 # screen: the title, the progress area (empty on the welcome screen)
-# and the stage (the step's content and the navigation buttons). When
-# the step changes, Streamlit swaps the new step into the same slots
-# in place, so the change is instant, with no blank moment in between.
-# (Wiping the old step first and fading the new one in made the page
-# flicker.)
+# and the stage (the step's content and the navigation buttons).
+#
+# When the step changes, Streamlit swaps the new step's pieces into
+# the stage one by one, so for a split second parts of the old step
+# are still there. The step's container fades in from invisible at
+# exactly that moment (step_container), so the swap happens unseen
+# and the new step appears as a whole.
 #
 # The page scrolls to the top the moment a navigation button is
 # clicked, before Streamlit redraws, so a tall step (such as step 2)
@@ -747,6 +749,19 @@ def go_to_step(target):
     """Navigation callback. Goes to a given step rather than "one
     further", so a double click on Continue can't skip a step."""
     st.session_state.intro_step = min(max(target, 0), TOTAL_STEPS)
+
+
+def step_container(stage, step):
+    """The container for one step's content (step 0 is the welcome),
+    inside the stage. It fades in from invisible when the step changes
+    (CSS: st-key-stepa_ and st-key-stepb_), which hides the moment in
+    which Streamlit swaps the old step's pieces for the new ones.
+    Neighbouring steps take turns between "a" and "b", so the animation
+    changes with every step and the fade replays even though Streamlit
+    reuses the container. Within a step the key stays the same, so
+    clicking a guess, the reveal or an expander doesn't replay it."""
+    parity = "a" if step % 2 else "b"
+    return stage.container(key=f"step{parity}_{step}")
 
 
 def show_sidebar():
@@ -899,7 +914,7 @@ progress_area = st.container()
 stage = st.container()
 
 if step == 0:
-    with stage:
+    with step_container(stage, 0):
         show_welcome()
     st.stop()  # nothing below runs on the welcome screen
 
@@ -908,6 +923,6 @@ current = STEPS[step - 1]
 with progress_area:
     show_progress(step, current)
 
-with stage:
+with step_container(stage, step):
     show_current_step(step, current)
     show_navigation(step)
