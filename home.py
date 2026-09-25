@@ -405,24 +405,47 @@ def ask_button(step_data):
 # widget's value once the widget is off screen.
 # ==================================================
 
+GUESS_NOTE = "Noted. The last step reveals the answer."
+
+
 def save_guess():
     st.session_state.market_guess = st.session_state.guess_widget
     st.session_state.answer_revealed = False
 
 
 def guess_question():
+    """The guess, with a note that fades in once a choice is made.
+
+    The radio is always drawn with the same settings (index=None), so
+    Streamlit keeps recognising it: a changing index would make it look
+    like a new widget and redraw it on every choice. A saved guess is
+    put back through its key when the user returns to this step.
+
+    The note is always there, but invisible until a guess is made, so
+    its space is reserved and nothing below it jumps when it appears.
+    It fades in with the soft-fade-in animation from the stylesheet."""
     st.markdown("**What do you think?** Which market did the Court find?")
+
     saved = st.session_state.market_guess
+    if saved and st.session_state.get("guess_widget") is None:
+        st.session_state.guess_widget = saved
+
     st.radio(
         "Your guess",
         GUESS_OPTIONS,
-        index=GUESS_OPTIONS.index(saved) if saved else None,
+        index=None,
         key="guess_widget",
         on_change=save_guess,
         label_visibility="collapsed",
     )
+
     if st.session_state.market_guess:
-        teaser("Noted. The last step reveals the answer.")
+        note_style = "animation: soft-fade-in 0.3s ease-out;"
+    else:
+        note_style = "visibility: hidden;"
+    render_html(
+        f'<div class="teaser" style="text-align: left; {note_style}">{GUESS_NOTE}</div>'
+    )
 
 
 def reveal_answer():

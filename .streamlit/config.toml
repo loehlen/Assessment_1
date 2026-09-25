@@ -8,9 +8,11 @@ base = "light"
 # rings, links), matching the pink used in shared.py
 primaryColor = "#9B6574"
 
-# Very light pink instead of Streamlit's grey, used for the sidebar,
-# the chat input box and other panels
-secondaryBackgroundColor = "#FCF9FA"
+# Page background and text colour, matching the palette in shared.py.
+# No secondaryBackgroundColor: Streamlit's default light grey keeps
+# its loading placeholders faint instead of pink
+backgroundColor = "#FFFFFF"
+textColor = "#30313D"
 
 [client]
 # Hide Streamlit's automatic page list (it shows the file names

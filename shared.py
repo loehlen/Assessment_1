@@ -165,11 +165,10 @@ def require_password(subtitle=None):
     The placeholder is created on every run, even once unlocked, so the
     old password screen is wiped at once instead of lingering.
 
-    The screen sits in one keyed container, which stays invisible for a
-    moment and then fades in as a whole (CSS: st-key-password_screen),
-    so its pieces don't pop in one after another while the page sets
-    up. A wrong password redraws the same container, so the fade
-    doesn't replay."""
+    The screen sits in one keyed container, which fades in quickly as a
+    whole (CSS: st-key-password_screen), straight after Streamlit's own
+    loading placeholders disappear. A wrong password redraws the same
+    container, so the fade doesn't replay."""
     gate = st.empty()
 
     if st.session_state.get("authenticated"):
@@ -1105,13 +1104,18 @@ div[class*="st-key-answer_"] {
     to { opacity: 1; transform: none; }
 }
 
-/* The password screen and the chatbot's welcome screen (first visit
-   and after a reset) stay invisible for a moment and then fade in as
-   a whole. Streamlit sends the page piece by piece, so on a slower
-   connection the title, the text and the field or buttons would
-   otherwise appear one after another; the short wait ("both" keeps
-   them hidden meanwhile) lets them arrive first. */
-.st-key-password_screen,
+/* The password screen fades in quickly, with no wait: it takes over
+   straight from Streamlit's own loading placeholders, so there is no
+   blank moment in between */
+.st-key-password_screen {
+    animation: soft-fade-in 0.2s ease-out;
+}
+
+/* The welcome screen (first visit and after a reset) stays invisible
+   for a moment and then fades in as a whole. Streamlit sends the page
+   piece by piece, so on a slower connection the title, the welcome and
+   the buttons would otherwise appear one after another; the short
+   wait ("both" keeps it hidden meanwhile) lets them arrive first. */
 .st-key-welcome_screen {
     animation: soft-fade-in 0.3s ease-out 0.15s both;
 }
