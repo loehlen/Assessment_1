@@ -14,7 +14,8 @@ How a question is answered
      source and flagged phrases, and corrects them in up to
      MAX_REVISIONS passes
   5. Each citation in the answer becomes a label that shows the
-     paragraph text on hover (or tap)
+     paragraph text on hover (or tap). The "Sources" cards are hidden
+     from users (SHOW_SOURCES) but still built, for testing
 
 Sections
   1. Page setup and settings
@@ -47,7 +48,6 @@ from shared import (
     CHUNKS_FOLDER,
     COVERED_PARAGRAPHS,
     COVERED_PINPOINT,
-    HOME_PAGE,
     SUBHEADING_PATTERNS,
     aglc_pinpoint,
     chunk_html,
@@ -60,6 +60,7 @@ from shared import (
     page_header,
     render_html,
     setup_page,
+    sidebar_back_to_intro,
     sidebar_label,
     sidebar_nav,
     split_paragraphs,
@@ -82,8 +83,13 @@ ANSWER_MODEL = "gpt-4o"
 REWRITE_MODEL = "gpt-4o"
 MAX_REVISIONS = 2          # correction passes the answer check may make
 
-# True while testing: shows where each chunk ranked in each search and
-# any problems the answer check could not fix. False for users.
+# False for users: the "Sources" cards under each answer are hidden.
+# True shows them again (the code for them is unchanged).
+SHOW_SOURCES = False
+
+# True while testing: shows the sources (even if SHOW_SOURCES is False),
+# where each chunk ranked in each search, and any problems the answer
+# check could not fix. False for users.
 SHOW_DEBUG = False
 
 NOT_ADDRESSED_REPLY = (
@@ -700,8 +706,9 @@ def answer_question(query):
     the answer and store both in the conversation.
 
     The chatbot's bubble appears straight away with a quiet "thinking"
-    indicator, which the answer replaces when it is ready; the answer
-    then fades in (CSS: .st-key-new_answer)."""
+    indicator in a placeholder. The answer then replaces the indicator
+    in that same placeholder, built exactly as show_past_message builds
+    it later, so nothing jumps or re-renders on the next click."""
     st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user", avatar=USER_AVATAR):
         st.write(query)
@@ -712,16 +719,21 @@ def answer_question(query):
         for m in st.session_state.messages[-6:-1]
     ]
 
+    # Where the answer will sit in the conversation (gives it its key)
+    index = len(st.session_state.messages)
+
     with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-        waiting = st.empty()
-        with waiting.container():
-            render_html(THINKING_HTML)
+        slot = st.empty()
+        slot.markdown(THINKING_HTML, unsafe_allow_html=True)
 
         try:
             search_query, was_rewritten = make_search_query(query, history)
             sources = retrieve_sources(search_query)
         except Exception:
-            waiting.error("Something went wrong retrieving relevant passages. Please try asking again.")
+            # Remove the unanswered question, so it doesn't confuse the
+            # next answer
+            st.session_state.messages.pop()
+            slot.error("Something went wrong retrieving relevant passages. Please try asking again.")
             st.stop()
 
         shown_query = search_query if was_rewritten else None
@@ -734,13 +746,11 @@ def answer_question(query):
         try:
             answer, issues = generate_answer(history, context, question_block, source_text)
         except Exception:
-            waiting.error("Something went wrong generating a response. Please try again in a moment.")
+            st.session_state.messages.pop()
+            slot.error("Something went wrong generating a response. Please try again in a moment.")
             st.stop()
 
-        waiting.empty()
-        with st.container(key="new_answer"):
-            render_answer(answer, sources)
-            render_sources(sources, shown_query, issues)
+        show_answer(index, answer, sources, shown_query, issues, target=slot)
 
     st.session_state.messages.append(
         {
@@ -821,7 +831,11 @@ def render_sources(sources, search_query=None, issues=None):
     """The "Sources" expander: one card per retrieved chunk, best match
     first, laid out like the judgment. Shows the rewritten search query,
     if there was one, and in debug mode any problems the answer check
-    could not fix."""
+    could not fix. Hidden from users unless SHOW_SOURCES or SHOW_DEBUG
+    is True."""
+    if not (SHOW_SOURCES or SHOW_DEBUG):
+        return
+
     pinpoints = [s["paragraphs"] for s in sources if s.get("paragraphs")]
 
     with st.expander(" · ".join(["Sources"] + pinpoints)):
@@ -845,26 +859,31 @@ def render_sources(sources, search_query=None, issues=None):
             )
 
 
-def show_past_message(message):
+def show_answer(index, answer, sources, search_query=None, issues=None, target=None):
+    """An answer (and its sources, if shown) in a container keyed to its
+    place in the conversation. New and replayed answers are built the
+    same way, so Streamlit keeps the same element on every rerun and
+    the fade-in (CSS: st-key-answer_) plays only once."""
+    with (target or st).container(key=f"answer_{index}"):
+        render_answer(answer, sources)
+        render_sources(sources, search_query, issues)
+
+
+def show_past_message(index, message):
     """Replay one stored message, with citation labels and sources."""
     avatar = USER_AVATAR if message["role"] == "user" else ASSISTANT_AVATAR
 
     with st.chat_message(message["role"], avatar=avatar):
         if message["role"] == "assistant" and message.get("sources"):
-            render_answer(message["content"], message["sources"])
-            render_sources(
+            show_answer(
+                index,
+                message["content"],
                 message["sources"],
                 message.get("search_query"),
                 message.get("issues"),
             )
         else:
             st.write(message["content"])
-
-
-def back_to_intro_link():
-    """Small link back to the introduction, under the page title."""
-    with st.container(key="back_link"):
-        st.page_link(HOME_PAGE, label="← Back to the introduction")
 
 
 def type_out(text):
@@ -874,10 +893,17 @@ def type_out(text):
         time.sleep(WELCOME_WORD_DELAY)
 
 
+def ask_starter(question):
+    """Starter button callback: the question is asked on the next run."""
+    st.session_state.pending_query = question
+
+
 def show_welcome():
     """Welcome bubble with the starter questions underneath. Animated
-    on the first visit only, so it doesn't replay on every click."""
+    on the first visit only. Marked as shown before the animation
+    starts, so a click during the animation doesn't replay it."""
     animate = not st.session_state.welcome_shown
+    st.session_state.welcome_shown = True
 
     if animate:
         time.sleep(WELCOME_START_DELAY)  # let the password screen clear
@@ -893,11 +919,12 @@ def show_welcome():
     for number, question in enumerate(STARTER_QUESTIONS):
         if animate:
             time.sleep(WELCOME_BUTTON_DELAY)
-        if st.button(question, key=f"starter_{number}"):
-            st.session_state.pending_query = question
-            st.rerun()
-
-    st.session_state.welcome_shown = True
+        st.button(
+            question,
+            key=f"starter_{number}",
+            on_click=ask_starter,
+            args=(question,),
+        )
 
 
 # ==================================================
@@ -910,16 +937,29 @@ init_state(
     welcome_shown=False,   # the welcome animation has played once
 )
 
-# Sidebar first, so it doesn't wait for the welcome animation
+
+def reset_conversation():
+    """Reset button callback: clears the chat before the page redraws."""
+    st.session_state.messages = []
+    st.session_state.pending_query = None
+
+
+# Sidebar first, so it doesn't wait for the welcome animation.
+# Order: page links, conversation, judgment, and the way back last.
 sidebar_nav()
 
 sidebar_label("Conversation")
-if st.sidebar.button("Reset conversation", key="reset", use_container_width=True):
-    st.session_state.messages = []
-    st.rerun()
+st.sidebar.button(
+    "Reset conversation",
+    key="reset",
+    on_click=reset_conversation,
+    use_container_width=True,
+)
 st.sidebar.caption("Clears the chat so you can start afresh.")
 
 judgment_sidebar_section()
+
+sidebar_back_to_intro()
 
 # Read the question before drawing the header, so the header knows
 # whether a conversation is under way (the input stays pinned to the
@@ -930,21 +970,25 @@ if not query and st.session_state.pending_query:
     query = st.session_state.pending_query
     st.session_state.pending_query = None
 
+conversation_started = bool(st.session_state.messages or query)
+
 # Full header and welcome before the first question, a one-line header
-# after. The placeholder is cleared as soon as a question is asked, so
-# the welcome doesn't linger while the answer loads.
+# after. On the first question the placeholder is wiped explicitly:
+# otherwise Streamlit would keep the old welcome and starter buttons on
+# screen (and clickable) until the answer had finished loading.
 top = st.empty()
+if query and not st.session_state.messages:
+    top.empty()
+
 with top.container():
-    if st.session_state.messages or query:
+    if conversation_started:
         compact_header(CHATBOT_SUBTITLE)
-        back_to_intro_link()
     else:
         page_header(CHATBOT_SUBTITLE)
-        back_to_intro_link()
         show_welcome()
 
-for message in st.session_state.messages:
-    show_past_message(message)
+for index, message in enumerate(st.session_state.messages):
+    show_past_message(index, message)
 
 if query:
     answer_question(query)

@@ -402,6 +402,13 @@ def judgment_sidebar_section():
     st.sidebar.caption(f"The text of {COVERED_PINPOINT}, with the original pages to download.")
 
 
+def sidebar_back_to_intro():
+    """Link back to the introduction. Call it last, so it is the last
+    link in the sidebar (CSS: st-key-back_link)."""
+    with st.sidebar.container(key="back_link"):
+        st.page_link(HOME_PAGE, label="← Back to the introduction")
+
+
 # ==================================================
 # 8. Colours and stylesheet
 #
@@ -565,6 +572,16 @@ a[data-testid="stPageLink-NavLink"][aria-current="page"] p {
     margin: 1.4rem 0 0.1rem 0;
 }
 
+/* "Back to the introduction": the last link in the sidebar, set apart
+   from the sections above it */
+.st-key-back_link {
+    margin-top: 1.4rem;
+}
+
+.st-key-back_link a[data-testid="stPageLink-NavLink"] p {
+    color: var(--accent);
+}
+
 /* ---------- Intro page ---------- */
 
 .paragraph-reference {
@@ -710,7 +727,7 @@ div[class*="st-key-starter_"] button:hover {
     color: var(--accent-dark);
 }
 
-/* Sources under an answer: a quiet footnote */
+/* Sources under an answer (testing only): a quiet footnote */
 div[data-testid="stChatMessage"] div[data-testid="stExpander"] details {
     border-color: var(--card-border) !important;
 }
@@ -780,7 +797,7 @@ div[data-testid="stChatMessage"] div[data-testid="stExpander"] summary p {
     bottom: 100%;
     transform: translateX(-50%);
     z-index: 1000;
-    width: min(340px, 85vw);
+    width: min(380px, 85vw);
     padding-bottom: 6px;
     cursor: auto;
 }
@@ -793,7 +810,7 @@ div[data-testid="stChatMessage"] div[data-testid="stExpander"] summary p {
 
 .cite-pop-inner {
     display: block;
-    max-height: 180px;
+    max-height: 240px;
     overflow-y: auto;
     padding: 0.7rem 0.9rem;
     background-color: white;
@@ -975,6 +992,65 @@ div[data-testid="stChatInput"] button svg {
 .conclusion-box {
     text-align: justify;
     text-justify: inter-word;
+}
+
+/* ---------- Answer loading and appearance ---------- */
+
+/* "Thinking" indicator inside the chatbot's bubble */
+.thinking {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.thinking-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--accent);
+    opacity: 0.35;
+    animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+.thinking-text {
+    margin-left: 0.4rem;
+}
+
+@keyframes thinking-pulse {
+    0%, 80%, 100% { opacity: 0.35; transform: scale(0.85); }
+    40% { opacity: 1; transform: scale(1); }
+}
+
+/* Each answer fades in when it first appears. Every answer keeps the
+   same keyed container on later reruns, so the fade never replays. */
+div[class*="st-key-answer_"] {
+    animation: answer-fade-in 0.4s ease-out;
+}
+
+@keyframes answer-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* No dimming of the page while an answer loads */
+[data-stale="true"],
+.stale-element {
+    opacity: 1 !important;
+    transition: none !important;
+}
+
+/* Respect "reduce motion" settings */
+@media (prefers-reduced-motion: reduce) {
+    .thinking-dot,
+    div[class*="st-key-answer_"] {
+        animation: none;
+    }
 }
 """
 
