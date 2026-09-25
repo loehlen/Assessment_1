@@ -86,9 +86,10 @@ MAX_REVISIONS = 2          # correction passes the answer check may make
 SHOW_DEBUG = False
 
 NOT_ADDRESSED_REPLY = (
-    "The passages retrieved for this question don't address it. That "
-    "doesn't necessarily mean the judgment doesn't: try rephrasing the "
-    "question, or use \"Read the judgment\" in the sidebar."
+    "The passages retrieved for this question don't address it. This "
+    f"chatbot covers only the relevant product market ({COVERED_PARAGRAPHS}); "
+    "if your question is about that, try rephrasing it. The full judgment "
+    "is linked under \"Read the judgment\" in the sidebar."
 )
 
 # Shown before the first question; display only, never sent to the model
@@ -322,12 +323,19 @@ Answering
   whole judgment. Never conclude from a missing passage that the Court
   or the judgment did not decide, say or address something; only a
   retrieved paragraph that states the opposite can show that.
-- If the passages cover part of the question, answer that part and
-  end with one sentence saying the passages retrieved for this
-  question don't cover the rest. If they don't cover it at all, reply
-  only, once: "{NOT_ADDRESSED_REPLY}"
+- If the question asks about several things and the passages cover
+  only some of them, answer those and name the part that isn't
+  covered in one closing sentence. Add no such sentence when the
+  answer is complete. If the passages don't cover the question at
+  all, reply only, once: "{NOT_ADDRESSED_REPLY}"
 - Ask for clarification only if the question could refer to more than
   one point in the paragraphs.
+- The chatbot covers only the relevant product market. If a question
+  is about something outside it (e.g. the geographic market or
+  whether there was an abuse), report what the retrieved paragraphs
+  say that bears on it, with citations, then say in one sentence that
+  the rest is outside this chatbot's scope. Never answer from outside
+  knowledge.
 
 Format
 - Lead with the direct answer. Plain prose, no headings, bullets or

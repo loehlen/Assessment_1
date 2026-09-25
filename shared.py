@@ -666,10 +666,13 @@ div[data-testid="stChatMessage"]:has([aria-label="Chat message from user"])
 }
 
 /* While the avatar image loads, the browser would show its alt text
-   ("assistant"), cut off to "assi"; make that fallback text invisible */
+   ("assistant"), cut off to "assi"; make that fallback text invisible
+   (font-size 0 also covers browsers that ignore the colour) */
 div[data-testid="stChatMessage"] [data-testid^="stChatMessageAvatar"],
 div[data-testid="stChatMessage"] [data-testid^="stChatMessageAvatar"] img {
     color: transparent;
+    font-size: 0;
+    overflow: hidden;
 }
 
 /* Short chat text (questions, welcome) left-aligned, not justified */
@@ -790,7 +793,7 @@ div[data-testid="stChatMessage"] div[data-testid="stExpander"] summary p {
 
 .cite-pop-inner {
     display: block;
-    max-height: 280px;
+    max-height: 180px;
     overflow-y: auto;
     padding: 0.7rem 0.9rem;
     background-color: white;
