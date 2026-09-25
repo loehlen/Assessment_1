@@ -147,13 +147,10 @@ STEPS = [
         "ask": "What did the Court say about how the relevant market must be defined?",
     },
 
-    # Step 3: [13]–[21]
+    # Step 3: [13]–[17], [19]–[21]
+    # The conclusions ([18] and the Commission's) are in the headings
     {
         "title": "The parties' positions",
-        "teaser": (
-            "The Commission drew the opposite conclusion from the studies "
-            "the applicant quoted."
-        ),
         "blocks": [
             {
                 "type": "side_by_side",
@@ -173,11 +170,6 @@ STEPS = [
                                 "lower when other fresh fruit is plentiful.",
                                 14, 17,
                             ),
-                            cite(
-                                "It concluded that bananas and other fresh "
-                                "fruit form only one market.",
-                                18,
-                            ),
                         ],
                     },
                     {
@@ -196,11 +188,10 @@ STEPS = [
                                 20,
                             ),
                             cite(
-                                "From the studies quoted by the applicant, it "
-                                "concluded that other fruit influences banana "
-                                "prices and availability only very "
-                                "ineffectively, and too briefly and too "
-                                "spasmodically for a single market.",
+                                "The studies the applicant quoted show only "
+                                "a very weak, brief and spasmodic influence "
+                                "of other fruit on banana prices and "
+                                "availability.",
                                 21,
                             ),
                         ],

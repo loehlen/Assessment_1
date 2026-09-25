@@ -106,13 +106,14 @@ WELCOME_MESSAGE = (
     f"{COVERED_PINPOINT}, or pick a question below to get started."
 )
 
-# Shown in the chatbot's bubble while a question is searched and answered
+# Shown in the chatbot's bubble while a question is searched and
+# answered (the animated dots come first, so the text has none)
 THINKING_HTML = (
     '<div class="thinking">'
     '<span class="thinking-dot"></span>'
     '<span class="thinking-dot"></span>'
     '<span class="thinking-dot"></span>'
-    '<span class="thinking-text">Reading the judgment…</span>'
+    '<span class="thinking-text">Reading the judgment</span>'
     "</div>"
 )
 
@@ -935,13 +936,16 @@ init_state(
     messages=[],
     pending_query=None,    # set by the intro page or a starter question
     welcome_shown=False,   # the welcome animation has played once
+    clear_screen=False,    # wipe the page before redrawing (after a reset)
 )
 
 
 def reset_conversation():
-    """Reset button callback: clears the chat before the page redraws."""
+    """Reset button callback: clears the chat, and asks for the page to
+    be wiped before it is redrawn, so the old messages vanish at once."""
     st.session_state.messages = []
     st.session_state.pending_query = None
+    st.session_state.clear_screen = True
 
 
 # Sidebar first, so it doesn't wait for the welcome animation.
@@ -961,7 +965,7 @@ judgment_sidebar_section()
 
 sidebar_back_to_intro()
 
-# Read the question before drawing the header, so the header knows
+# Read the question before drawing the page, so the header knows
 # whether a conversation is under way (the input stays pinned to the
 # bottom wherever it is called)
 query = st.chat_input("Ask a question about the relevant product market...")
@@ -970,25 +974,28 @@ if not query and st.session_state.pending_query:
     query = st.session_state.pending_query
     st.session_state.pending_query = None
 
-conversation_started = bool(st.session_state.messages or query)
+# Everything in the main area sits in one placeholder. Streamlit only
+# removes old elements at the end of a run, so after a reset (or on the
+# first question) the placeholder is wiped first: otherwise the old
+# chat (or the welcome) would stay on screen while the new page is
+# drawn over it.
+main = st.empty()
+if st.session_state.clear_screen or (query and not st.session_state.messages):
+    main.empty()
+st.session_state.clear_screen = False
 
-# Full header and welcome before the first question, a one-line header
-# after. On the first question the placeholder is wiped explicitly:
-# otherwise Streamlit would keep the old welcome and starter buttons on
-# screen (and clickable) until the answer had finished loading.
-top = st.empty()
-if query and not st.session_state.messages:
-    top.empty()
-
-with top.container():
-    if conversation_started:
+with main.container():
+    # Full header and welcome before the first question (fading in,
+    # CSS: st-key-welcome_screen), a one-line header after
+    if st.session_state.messages or query:
         compact_header(CHATBOT_SUBTITLE)
     else:
-        page_header(CHATBOT_SUBTITLE)
-        show_welcome()
+        with st.container(key="welcome_screen"):
+            page_header(CHATBOT_SUBTITLE)
+            show_welcome()
 
-for index, message in enumerate(st.session_state.messages):
-    show_past_message(index, message)
+    for index, message in enumerate(st.session_state.messages):
+        show_past_message(index, message)
 
-if query:
-    answer_question(query)
+    if query:
+        answer_question(query)

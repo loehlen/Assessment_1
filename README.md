@@ -300,4 +300,8 @@ market, and does not explain the SSNIP test from general knowledge.
 
 *Shows:* answers are grounded in the judgment only.
 
-## Credits - Built with Streamlit, ChromaDB and the OpenAI API. - [TUTORIAL / CLASS CODE CREDIT] - The selection, chunking and attribution of the judgment text are my own work. Generative AI (Claude) was used to help write and test the code. - Reciprocal rank fusion: G. V. Cormack, C. L. A. Clarke and S. Büttcher, "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods" (SIGIR 2009). - HyDE: L. Gao, X. Ma, J. Lin and J. Callan, "Precise Zero-Shot Dense Retrieval without Relevance Labels" (2022).
+## Credits 
+- Built with Streamlit, ChromaDB and the OpenAI API. 
+- The selection, chunking and attribution of the judgment text are my own work. Generative AI (Claude) was used to help write and test the code. 
+- Reciprocal rank fusion: G. V. Cormack, C. L. A. Clarke and S. Büttcher, "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods" (SIGIR 2009). 
+- HyDE: L. Gao, X. Ma, J. Lin and J. Callan, "Precise Zero-Shot Dense Retrieval without Relevance Labels" (2022).

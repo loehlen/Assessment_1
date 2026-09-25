@@ -61,10 +61,14 @@ EUR_LEX_URL = "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:61976CJ
 # One line-drawn banana in the accent pink: next to every page title
 # (BANANA_SVG), as the browser-tab icon and as the chatbot's avatar
 # (the PNGs). A missing PNG falls back to an emoji.
+#
+# The SVG has its own size (24 × 24 px), so it never shows huge, even
+# for a moment before the page's styles load.
 # ==================================================
 
 BANANA_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    'width="24" height="24" fill="none" '
     'stroke="#9B6574" stroke-width="1.6" stroke-linecap="round" '
     'stroke-linejoin="round">'
     '<path d="M17.2 6.2 C 19.6 13.6 13.4 20.6 4.2 18.4 C 3.4 18.2 3.3 17.2 '
@@ -76,6 +80,17 @@ BANANA_SVG = (
 )
 BANANA_SRC = "data:image/svg+xml;base64," + base64.b64encode(BANANA_SVG.encode()).decode()
 
+# Size and position of each banana, in "em" (relative to the text next
+# to it). Written directly on the image, so no Streamlit style can
+# override it: change the sizes here. The drawing fills only part of
+# its square, so the title banana is taller than the capitals to look
+# the same size as them.
+BANANA_STYLES = {
+    "title-icon": "height: 1.15em; margin-left: 0.25em; vertical-align: -0.2em;",
+    "compact-icon": "height: 1em; margin-left: 0.3em; vertical-align: -0.12em;",
+    "inline-icon": "height: 1.15em; margin-right: 0.3em; vertical-align: -0.2em;",
+}
+
 
 def image_or(path, fallback):
     """The image file if it's in the repo, otherwise the fallback."""
@@ -86,9 +101,11 @@ PAGE_ICON = image_or("banana_icon.png", "⚖️")
 ASSISTANT_AVATAR = image_or("banana_avatar.png", "⚖️")
 
 
-def banana(size_class="title-icon"):
-    """The banana as an inline image, for use inside HTML."""
-    return f'<img class="{size_class}" src="{BANANA_SRC}" alt="">'
+def banana(kind="title-icon"):
+    """The banana as an inline image, for use inside HTML. kind is a
+    key of BANANA_STYLES."""
+    style = BANANA_STYLES[kind] + " width: auto; max-width: none; max-height: none;"
+    return f'<img class="{kind}" src="{BANANA_SRC}" style="{style}" alt="">'
 
 
 # ==================================================
@@ -123,12 +140,27 @@ def setup_page(page_title, password_subtitle=None):
     require_password(password_subtitle)
 
 
+def check_password():
+    """Password field callback. It runs before the page is redrawn, so
+    a correct password opens the app in a single run, without first
+    drawing the password screen again. The typed password is cleared
+    straight away, so it isn't kept in the session."""
+    entered = st.session_state.password_input
+    st.session_state.password_input = ""
+
+    if not entered:
+        return
+
+    st.session_state.authenticated = entered == os.environ["PASSWORD"]
+    st.session_state.password_error = not st.session_state.authenticated
+
+
 def require_password(subtitle=None):
     """Password gate for both pages: entering it once unlocks the whole
     app for the session.
 
     The placeholder is created on every run, even once unlocked, so the
-    old password screen is wiped at once instead of lingering faded."""
+    old password screen is wiped at once instead of lingering."""
     gate = st.empty()
 
     if st.session_state.get("authenticated"):
@@ -140,15 +172,15 @@ def require_password(subtitle=None):
             app_subtitle(subtitle)
         teaser("Enter the password to get started.")
 
-        password = st.text_input(
-            label="Password", type="password", placeholder="Enter password"
+        st.text_input(
+            label="Password",
+            type="password",
+            placeholder="Enter password",
+            key="password_input",
+            on_change=check_password,
         )
-        if password:
-            if password == os.environ["PASSWORD"]:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
+        if st.session_state.get("password_error"):
+            st.error("Incorrect password.")
 
     st.stop()
 
@@ -443,7 +475,19 @@ CSS_VARIABLES = (
 )
 
 STYLESHEET = """
-/* ---------- Title with the banana ---------- */
+/* ---------- Page ---------- */
+
+/* Always keep room for the scrollbar, so the page doesn't shift
+   sideways when it appears or disappears (e.g. when a long
+   conversation is reset) */
+html,
+section.main,
+[data-testid="stMain"],
+[data-testid="stAppViewContainer"] {
+    scrollbar-gutter: stable;
+}
+
+/* ---------- Title (the banana's size is set in BANANA_STYLES) ---------- */
 
 h1.app-title {
     padding-top: 0;
@@ -456,27 +500,6 @@ h1.app-title {
     font-weight: 600;
     letter-spacing: 0.01em;
     margin: 0 0 1.4rem 0;
-}
-
-.title-icon {
-    height: 0.85em;
-    width: auto;
-    margin-left: 0.3em;
-    vertical-align: -0.04em;
-}
-
-.compact-icon {
-    height: 1em;
-    width: auto;
-    margin-left: 0.3em;
-    vertical-align: -0.12em;
-}
-
-.inline-icon {
-    height: 1.15em;
-    width: auto;
-    margin-right: 0.3em;
-    vertical-align: -0.2em;
 }
 
 /* ---------- Buttons (download buttons styled the same) ---------- */
@@ -985,7 +1008,9 @@ div[data-testid="stChatInput"] button svg {
     color: white !important;
 }
 
-/* Justified body text throughout the app */
+/* Justified body text throughout the app (bullet points stay
+   left-aligned: in narrow columns, justifying them would leave
+   uneven gaps between words) */
 [data-testid="stMarkdownContainer"] p,
 .case-card,
 .teaser,
@@ -1027,8 +1052,9 @@ div[data-testid="stChatInput"] button svg {
     40% { opacity: 1; transform: scale(1); }
 }
 
-/* Each answer fades in when it first appears. Every answer keeps the
-   same keyed container on later reruns, so the fade never replays. */
+/* Each answer fades in (and rises slightly) when it first appears.
+   Every answer keeps the same keyed container on later reruns, so the
+   fade never replays. */
 div[class*="st-key-answer_"] {
     animation: answer-fade-in 0.4s ease-out;
 }
@@ -1036,6 +1062,20 @@ div[class*="st-key-answer_"] {
 @keyframes answer-fade-in {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: none; }
+}
+
+/* The welcome screen (first visit and after a reset) stays invisible
+   for a moment and then fades in as a whole. Streamlit sends the page
+   piece by piece, so on a slower connection the title, the welcome and
+   the buttons would otherwise appear one after another; the short
+   wait ("both" keeps it hidden meanwhile) lets them arrive first. */
+.st-key-welcome_screen {
+    animation: soft-fade-in 0.3s ease-out 0.15s both;
+}
+
+@keyframes soft-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* No dimming of the page while an answer loads */
@@ -1048,7 +1088,8 @@ div[class*="st-key-answer_"] {
 /* Respect "reduce motion" settings */
 @media (prefers-reduced-motion: reduce) {
     .thinking-dot,
-    div[class*="st-key-answer_"] {
+    div[class*="st-key-answer_"],
+    .st-key-welcome_screen {
         animation: none;
     }
 }
