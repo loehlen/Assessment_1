@@ -773,10 +773,11 @@ div[data-testid="stChatMessage"] div[data-testid="stExpander"] summary p {
 .cite-pop {
     display: none;
     position: absolute;
-    left: 0;
+    left: 50%;
     bottom: 100%;
+    transform: translateX(-50%);
     z-index: 1000;
-    width: min(440px, 75vw);
+    width: min(340px, 85vw);
     padding-bottom: 6px;
     cursor: auto;
 }

@@ -313,9 +313,11 @@ Answering
   line explains a follow-up. For "why", give only reasons a paragraph
   itself states.
 - If the question assumes something that a retrieved paragraph
-  contradicts, correct it from that paragraph before anything else:
-  say what the paragraph states instead and cite it (e.g. "The Court
-  did not find X; it found that Y [n]").
+  contradicts, correct it before anything else, in one sentence that
+  cites the paragraph stating the actual position (e.g. "Contrary to
+  the question, the Court found that Y [n]."). Never cite a paragraph
+  that only records the assumption, such as a party's argument, for
+  the correction.
 - You only see the passages retrieved for this question, not the
   whole judgment. Never conclude from a missing passage that the Court
   or the judgment did not decide, say or address something; only a
