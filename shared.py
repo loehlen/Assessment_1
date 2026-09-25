@@ -682,18 +682,21 @@ a[data-testid="stPageLink-NavLink"][aria-current="page"] p {
     transition: width 0.4s ease;
 }
 
-/* Each intro step fades in (and rises slightly) when it opens. The
-   fade starts from invisible, which also hides the moment in which
-   Streamlit swaps the old step's pieces for the new ones.
-   Neighbouring steps take turns between two identical animations
-   (home.py: step_container), so the fade replays on every step
-   change; clicks within a step don't replay it. */
+/* Each intro step stays invisible for a moment when it opens, then
+   fades in (and rises slightly) as a whole. Streamlit swaps the old
+   step's pieces for the new ones one after another, and on a hosted
+   app that takes a moment; the short wait ("both" keeps the step
+   hidden meanwhile) lets the swap finish unseen, as on the chatbot's
+   welcome screen. Neighbouring steps take turns between two identical
+   animations (home.py: step_container), so the fade replays on every
+   step change; clicks within a step don't replay it. If pieces still
+   show while a step is changing, raise the 0.2s wait a little. */
 div[class*="st-key-stepa_"] {
-    animation: step-in-a 0.35s ease-out;
+    animation: step-in-a 0.3s ease-out 0.2s both;
 }
 
 div[class*="st-key-stepb_"] {
-    animation: step-in-b 0.35s ease-out;
+    animation: step-in-b 0.3s ease-out 0.2s both;
 }
 
 @keyframes step-in-a {
