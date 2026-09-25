@@ -634,32 +634,47 @@ def pdf_download_button(key):
 # ==================================================
 # 6. Page flow
 #
-# The title, progress bar and navigation buttons stay in place; only
-# the step's content (in step_container) fades in when the step
-# changes, and the Court's answer fades in when revealed.
+# The main area has three fixed slots, in the same place on every
+# screen, so each one is replaced cleanly when the step changes:
+#   1. the title and subtitle
+#   2. the progress area: divider, step indicator, progress bar and
+#      skip button (empty on the welcome screen)
+#   3. the stage: the step's content and the navigation buttons
+#
+# When the step changes, the stage is wiped before the new step is
+# drawn (as the chatbot page does after a reset). Otherwise Streamlit
+# would redraw the old step in place, and anything the new step
+# doesn't have would stay on screen until the run ends. The new step
+# then fades in on a clean slate. Clicks within a step (the guess, the
+# reveal, an expander) don't wipe anything, so nothing replays.
 # ==================================================
 
 # Step 0 is the welcome screen; steps 1 to TOTAL_STEPS are the intro
-init_state(intro_step=0, market_guess=None, answer_revealed=False, celebrate=False)
+init_state(
+    intro_step=0,
+    shown_step=None,       # the step drawn on the previous run
+    market_guess=None,
+    answer_revealed=False,
+    celebrate=False,
+)
 
 
-def go_next():
-    st.session_state.intro_step = min(st.session_state.intro_step + 1, TOTAL_STEPS)
+def go_to_step(target):
+    """Navigation callback. Goes to a given step rather than "one
+    further", so a double click on Continue can't skip a step."""
+    st.session_state.intro_step = min(max(target, 0), TOTAL_STEPS)
 
 
-def go_back():
-    st.session_state.intro_step = max(st.session_state.intro_step - 1, 0)
-
-
-def step_container(step):
-    """A container for one step's content (step 0 is the welcome), so
-    it fades in when the step changes (CSS: st-key-stepa_ and
-    st-key-stepb_). Neighbouring steps take turns between "a" and "b":
-    each step change swaps the animation, so the fade plays even if
-    Streamlit reuses the element. Within a step the key stays the same,
-    so clicking a guess or an expander doesn't replay it."""
+def step_container(stage, step):
+    """The container for one step's content (step 0 is the welcome),
+    drawn into the stage, so it fades in when the step changes (CSS:
+    st-key-stepa_ and st-key-stepb_). Neighbouring steps take turns
+    between "a" and "b", so the animation changes with every step and
+    the fade plays even if the browser reuses the element. Within a
+    step the key stays the same, so clicking a guess or an expander
+    doesn't replay it."""
     parity = "a" if step % 2 else "b"
-    return st.container(key=f"step{parity}_{step}")
+    return stage.container(key=f"step{parity}_{step}")
 
 
 def show_sidebar():
@@ -675,39 +690,37 @@ def show_sidebar():
 
 
 def show_welcome():
-    page_header(INTRO_SUBTITLE)
+    teaser(
+        "Welcome! This chatbot covers an absolute classic of European "
+        "competition law: how the European Court of Justice decided "
+        "whether bananas form a market of their own.",
+        "Before we get into the chatbot, let's first explore what the "
+        "case is about.",
+        align_left=True,
+    )
+    st.caption(f"{TOTAL_STEPS} short steps · about 3 minutes")
 
-    with step_container(0):
-        teaser(
-            "Welcome! This chatbot covers an absolute classic of European "
-            "competition law: how the European Court of Justice decided "
-            "whether bananas form a market of their own.",
-            "Before we get into the chatbot, let's first explore what the "
-            "case is about.",
-            align_left=True,
+    st.write("")
+    # Skip on the left, the main action on the right
+    skip_col, _, start_col = st.columns([1.2, 1.6, 1.6])
+    with skip_col:
+        if st.button("Skip to the chatbot", key="skip_welcome", use_container_width=True):
+            go_to_chatbot()
+    with start_col:
+        st.button(
+            "Let's explore the case →",
+            key="start_intro",
+            on_click=go_to_step,
+            args=(1,),
+            type="primary",
+            use_container_width=True,
         )
-        st.caption(f"{TOTAL_STEPS} short steps · about 3 minutes")
-
-        st.write("")
-        # Skip on the left, the main action on the right
-        skip_col, _, start_col = st.columns([1.2, 1.6, 1.6])
-        with skip_col:
-            if st.button("Skip to the chatbot", key="skip_welcome", use_container_width=True):
-                go_to_chatbot()
-        with start_col:
-            st.button(
-                "Let's explore the case →",
-                on_click=go_next,
-                type="primary",
-                use_container_width=True,
-            )
 
 
 def show_progress(step, current):
-    """Title, step indicator and progress bar, with a skip button until
-    the last step. The skip button's column stays on the last step
-    (empty), so the bar keeps its width and just fills up."""
-    page_header(INTRO_SUBTITLE)
+    """Step indicator and progress bar, with a skip button until the
+    last step. The skip button's column stays on the last step (empty),
+    so the bar keeps its width and just fills up."""
     st.divider()
     render_html(
         f'<div class="step-indicator">Step {step} of {TOTAL_STEPS} · {current["title"]}</div>'
@@ -773,12 +786,30 @@ def show_navigation(step):
     nav_back, _, nav_next = st.columns([1, 2, 1.4])
 
     with nav_back:
-        st.button("← Back", on_click=go_back, use_container_width=True)
+        st.button(
+            "← Back",
+            key="nav_back",
+            on_click=go_to_step,
+            args=(step - 1,),
+            use_container_width=True,
+        )
 
     with nav_next:
         if step < TOTAL_STEPS:
-            st.button("Continue →", on_click=go_next, type="primary", use_container_width=True)
-        elif st.button("Go to the chatbot →", type="primary", use_container_width=True):
+            st.button(
+                "Continue →",
+                key="nav_next",
+                on_click=go_to_step,
+                args=(step + 1,),
+                type="primary",
+                use_container_width=True,
+            )
+        elif st.button(
+            "Go to the chatbot →",
+            key="nav_chatbot",
+            type="primary",
+            use_container_width=True,
+        ):
             go_to_chatbot()
 
 
@@ -788,13 +819,27 @@ st.session_state.intro_step = step
 
 show_sidebar()
 
+# The three slots (see the note at the top of this section)
+page_header(INTRO_SUBTITLE)
+progress_area = st.empty()
+stage = st.empty()
+
+# A new step: wipe the old one before drawing, so it vanishes at once
+if st.session_state.shown_step != step:
+    stage.empty()
+    st.session_state.shown_step = step
+
 if step == 0:
-    show_welcome()
+    progress_area.empty()
+    with step_container(stage, 0):
+        show_welcome()
     st.stop()  # nothing below runs on the welcome screen
 
 current = STEPS[step - 1]
 
-show_progress(step, current)
-with step_container(step):
+with progress_area.container():
+    show_progress(step, current)
+
+with step_container(stage, step):
     show_current_step(step, current)
-show_navigation(step)
+    show_navigation(step)
