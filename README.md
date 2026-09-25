@@ -25,8 +25,7 @@ The app has two pages:
 - **Chatbot:** answers questions about paragraphs [10]–[35] of the
   judgment. Every sentence that reports the judgment ends with an AGLC
   pinpoint citation (e.g. [29]). Hovering over (or tapping) a citation
-  shows the text of the cited paragraph, and the **Sources** expander
-  under each answer shows the passages the answer was based on.
+  shows the text of the cited paragraph.
 
 Three starter questions help new users begin, and each introduction step
 has an "Ask the chatbot about this" button that opens the chatbot with a
