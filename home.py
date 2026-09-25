@@ -19,6 +19,7 @@ import io
 from xml.sax.saxutils import escape
 
 import streamlit as st
+import streamlit.components.v1 as components
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
@@ -645,8 +646,10 @@ def pdf_download_button(key):
 # drawn (as the chatbot page does after a reset). Otherwise Streamlit
 # would redraw the old step in place, and anything the new step
 # doesn't have would stay on screen until the run ends. The new step
-# then fades in on a clean slate. Clicks within a step (the guess, the
-# reveal, an expander) don't wipe anything, so nothing replays.
+# then fades in on a clean slate, and the page scrolls back to the
+# top, so a tall step (such as step 2) doesn't leave the next one
+# half-scrolled. Clicks within a step (the guess, the reveal, an
+# expander) don't wipe, replay or scroll anything.
 # ==================================================
 
 # Step 0 is the welcome screen; steps 1 to TOTAL_STEPS are the intro
@@ -657,6 +660,33 @@ init_state(
     answer_revealed=False,
     celebrate=False,
 )
+
+# Scrolls the page to the top. Streamlit has no built-in way to do
+# this, so a tiny invisible frame runs it. The page scrolls in a
+# different element depending on the Streamlit version, so all the
+# likely ones are tried.
+SCROLL_TO_TOP_SCRIPT = """
+<script>
+const page = window.parent.document;
+const scrollers = [
+    '[data-testid="stMain"]',
+    "section.main",
+    '[data-testid="stAppViewContainer"]',
+];
+for (const selector of scrollers) {
+    const element = page.querySelector(selector);
+    if (element) element.scrollTo({ top: 0, behavior: "instant" });
+}
+window.parent.scrollTo({ top: 0, behavior: "instant" });
+</script>
+"""
+
+
+def scroll_to_top(step):
+    """Scroll to the top once per step. The step number in the frame
+    makes it new for every step, so the browser runs the script again
+    when the step changes, but not on clicks within a step."""
+    components.html(f"<!-- step {step} -->{SCROLL_TO_TOP_SCRIPT}", height=0)
 
 
 def go_to_step(target):
@@ -833,6 +863,7 @@ if step == 0:
     progress_area.empty()
     with step_container(stage, 0):
         show_welcome()
+        scroll_to_top(0)
     st.stop()  # nothing below runs on the welcome screen
 
 current = STEPS[step - 1]
@@ -843,3 +874,4 @@ with progress_area.container():
 with step_container(stage, step):
     show_current_step(step, current)
     show_navigation(step)
+    scroll_to_top(step)
