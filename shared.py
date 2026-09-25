@@ -62,12 +62,14 @@ EUR_LEX_URL = "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:61976CJ
 # (BANANA_SVG), as the browser-tab icon and as the chatbot's avatar
 # (the PNGs). A missing PNG falls back to an emoji.
 #
-# The SVG has its own size (24 × 24 px), so it never shows huge, even
+# The viewBox is cropped tightly around the drawing, so the banana
+# fills its image and the sizes below are the banana's real size. The
+# SVG also has its own size (24 × 24 px), so it never shows huge, even
 # for a moment before the page's styles load.
 # ==================================================
 
 BANANA_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="2.4 2.7 17 17" '
     'width="24" height="24" fill="none" '
     'stroke="#9B6574" stroke-width="1.6" stroke-linecap="round" '
     'stroke-linejoin="round">'
@@ -82,13 +84,14 @@ BANANA_SRC = "data:image/svg+xml;base64," + base64.b64encode(BANANA_SVG.encode()
 
 # Size and position of each banana, in "em" (relative to the text next
 # to it). Written directly on the image, so no Streamlit style can
-# override it: change the sizes here. The drawing fills only part of
-# its square, so the title banana is taller than the capitals to look
-# the same size as them.
+# override it: change the sizes here.
+#   height          the banana's size
+#   vertical-align  how far its bottom sits below the text's baseline
+#                   (less negative = higher, more negative = lower)
 BANANA_STYLES = {
-    "title-icon": "height: 1.15em; margin-left: 0.25em; vertical-align: -0.2em;",
-    "compact-icon": "height: 1em; margin-left: 0.3em; vertical-align: -0.12em;",
-    "inline-icon": "height: 1.15em; margin-right: 0.3em; vertical-align: -0.2em;",
+    "title-icon": "height: 1em; margin-left: 0.3em; vertical-align: -0.12em;",
+    "compact-icon": "height: 0.85em; margin-left: 0.3em; vertical-align: -0.1em;",
+    "inline-icon": "height: 0.9em; margin-right: 0.3em; vertical-align: -0.15em;",
 }
 
 

@@ -103,6 +103,10 @@ WELCOME_MESSAGE = (
     f"{COVERED_PINPOINT}, or pick a question below to get started."
 )
 
+# Loading texts have no "…" of their own: the pink spinner or the
+# animated dots in front of them already show that something is loading
+STORE_LOADING_TEXT = "Getting the judgment ready for your questions"
+
 # Shown in the chatbot's bubble while a question is searched and
 # answered (the animated dots come first, so the text has none)
 THINKING_HTML = (
@@ -252,7 +256,7 @@ def load_store():
     return chunk_collection, paragraph_collection, chunks
 
 
-with st.spinner("Getting the judgment ready for your questions…"):
+with st.spinner(STORE_LOADING_TEXT):
     chunk_collection, paragraph_collection, chunks = load_store()
 
 client = OpenAI()
