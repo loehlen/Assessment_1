@@ -669,10 +669,13 @@ def pdf_download_button(key):
 # drawn (as the chatbot page does after a reset). Otherwise Streamlit
 # would redraw the old step in place, and anything the new step
 # doesn't have would stay on screen until the run ends. The new step
-# then fades in on a clean slate, and the page scrolls back to the
-# top, so a tall step (such as step 2) doesn't leave the next one
-# half-scrolled. Clicks within a step (the guess, the reveal, an
-# expander) don't wipe, replay or scroll anything.
+# then fades in on a clean slate.
+#
+# The page scrolls to the top the moment a navigation button is
+# clicked, before Streamlit starts redrawing, so a tall step (such as
+# step 2) doesn't leave the next one half-scrolled and the page doesn't
+# jump while the new step fades in. Clicks within a step (the guess,
+# the reveal, an expander) don't wipe, replay or scroll anything.
 # ==================================================
 
 # Step 0 is the welcome screen; steps 1 to TOTAL_STEPS are the intro
@@ -684,32 +687,72 @@ init_state(
     celebrate=False,
 )
 
-# Scrolls the page to the top. Streamlit has no built-in way to do
-# this, so a tiny invisible frame runs it. The page scrolls in a
+# Buttons that change the step (their keys are set in show_welcome and
+# show_navigation); clicking one scrolls the page to the top
+NAVIGATION_BUTTONS = ".st-key-start_intro, .st-key-nav_next, .st-key-nav_back"
+
+# Scrolling to the top. Streamlit has no built-in way to do this, so a
+# tiny invisible frame adds a small script to the page, once:
+#   - it scrolls to the top as soon as a navigation button is clicked,
+#     before Streamlit redraws, so the new step appears without a jump
+#   - it provides introScrollToTop(), which the frame also calls when a
+#     step first appears, as a backup (e.g. when arriving from the
+#     chatbot page); after a click there's nothing left for it to do
+# The script is added to the page itself, not kept in the frame,
+# because the frame is replaced on every step. The page scrolls in a
 # different element depending on the Streamlit version, so all the
-# likely ones are tried.
-SCROLL_TO_TOP_SCRIPT = """
+# likely ones are tried. If the page doesn't accept the added script,
+# the frame scrolls the page itself.
+SCROLL_SCRIPT = """
 <script>
 const page = window.parent.document;
-const scrollers = [
-    '[data-testid="stMain"]',
-    "section.main",
-    '[data-testid="stAppViewContainer"]',
-];
-for (const selector of scrollers) {
-    const element = page.querySelector(selector);
-    if (element) element.scrollTo({ top: 0, behavior: "instant" });
+
+const helperCode = `
+    window.introScrollToTop = function () {
+        const scrollers = [
+            '[data-testid="stMain"]',
+            "section.main",
+            '[data-testid="stAppViewContainer"]',
+        ];
+        for (const selector of scrollers) {
+            const element = document.querySelector(selector);
+            if (element) element.scrollTo({ top: 0, behavior: "instant" });
+        }
+        window.scrollTo({ top: 0, behavior: "instant" });
+    };
+    document.addEventListener("click", function (event) {
+        if (event.target.closest("NAVIGATION_BUTTONS")) {
+            window.introScrollToTop();
+        }
+    }, true);
+`;
+
+if (!page.getElementById("intro-scroll-helper")) {
+    const helper = page.createElement("script");
+    helper.id = "intro-scroll-helper";
+    helper.textContent = helperCode;
+    page.head.appendChild(helper);
 }
-window.parent.scrollTo({ top: 0, behavior: "instant" });
+
+if (window.parent.introScrollToTop) {
+    window.parent.introScrollToTop();
+} else {
+    for (const selector of ['[data-testid="stMain"]', "section.main",
+                            '[data-testid="stAppViewContainer"]']) {
+        const element = page.querySelector(selector);
+        if (element) element.scrollTo({ top: 0, behavior: "instant" });
+    }
+    window.parent.scrollTo({ top: 0, behavior: "instant" });
+}
 </script>
-"""
+""".replace("NAVIGATION_BUTTONS", NAVIGATION_BUTTONS)
 
 
 def scroll_to_top(step):
-    """Scroll to the top once per step. The step number in the frame
-    makes it new for every step, so the browser runs the script again
-    when the step changes, but not on clicks within a step."""
-    components.html(f"<!-- step {step} -->{SCROLL_TO_TOP_SCRIPT}", height=0)
+    """The invisible scroll frame (see SCROLL_SCRIPT). The step number
+    makes the frame new for every step, so its script runs again when
+    the step changes, but not on clicks within a step."""
+    components.html(f"<!-- step {step} -->{SCROLL_SCRIPT}", height=0)
 
 
 def go_to_step(target):
