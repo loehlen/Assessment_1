@@ -464,7 +464,7 @@ def sidebar_back_to_intro():
 PALETTE = {
     "accent": "#9B6574",         # primary buttons, labels, focus rings
     "accent-dark": "#85525F",    # accent on hover
-    "tint": "#F8F0F2",           # hovered / open / highlighted backgrounds
+    "tint": "#F8F0F2",           # sidebar, input fields; hovered / open / highlighted backgrounds
     "nav-highlight": "#F3EAED",  # current page in the sidebar
     "border": "#EEE2E6",         # buttons and expanders
     "border-hover": "#E3D2D8",
@@ -583,6 +583,17 @@ div[data-testid="stExpanderDetails"] {
 }
 
 /* ---------- Sidebar ---------- */
+
+/* Light pink sidebar. Set here rather than as the theme's
+   secondaryBackgroundColor in config.toml: the theme colour would also
+   turn Streamlit's loading placeholders pink, while this stylesheet
+   only applies once the app has loaded. Both the sidebar and its inner
+   content panel are coloured, as Streamlit versions differ in which
+   of the two carries the background. */
+[data-testid="stSidebar"],
+[data-testid="stSidebarContent"] {
+    background-color: var(--tint) !important;
+}
 
 a[data-testid="stPageLink-NavLink"] {
     border-radius: 8px;
@@ -999,8 +1010,9 @@ div[data-testid="stDialog"] {
 }
 
 /* ---------- Chat input and password field ----------
-   Exactly one pink ring, drawn by the outer container only; every
-   element inside has no border, shadow or outline of its own. */
+   Light pink, like the sidebar, with exactly one pink ring, drawn by
+   the outer container only; every element inside has no border,
+   shadow or outline of its own. */
 
 div[data-testid="stChatInput"],
 div[data-testid="stTextInput"] > div {
@@ -1021,6 +1033,18 @@ div[data-testid="stTextInput"] * {
     border-color: transparent !important;
     box-shadow: none !important;
     outline: none !important;
+}
+
+/* The pink fill: the box itself and every layer inside it (Streamlit
+   stacks several, each with its own grey background). In the chat
+   input the send button is left out, so it keeps its solid fill; in
+   the password field the show/hide eye is included, so it sits on
+   the same pink. */
+div[data-testid="stChatInput"],
+div[data-testid="stChatInput"] :not(button):not(button *),
+div[data-testid="stTextInput"] > div,
+div[data-testid="stTextInput"] > div * {
+    background-color: var(--tint) !important;
 }
 
 div[data-testid="stChatInput"] textarea,
