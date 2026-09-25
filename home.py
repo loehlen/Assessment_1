@@ -120,26 +120,25 @@ STEPS = [
             {
                 "type": "text",
                 "text": cite(
-                    "To decide whether UBC had a dominant position that it "
-                    "could abuse, the Court first had to define the market.",
+                    "To decide whether UBC held a dominant position, the "
+                    "Court first had to define the market, by product and "
+                    "by geography.",
                     10,
                 ),
             },
             {
                 "type": "details",
-                "label": "The two possibilities the Court had to choose between",
+                "label": "The two possibilities",
                 "paragraphs": [
                     cite(
-                        "A. Bananas are an integral part of the fresh fruit "
-                        "market, because they are reasonably interchangeable "
-                        "by consumers with other kinds of fresh fruit — as "
-                        "the applicant maintains.",
+                        "A. One fresh fruit market: bananas are reasonably "
+                        "interchangeable with other fresh fruit, as the "
+                        "applicant maintained.",
                         12,
                     ),
                     cite(
-                        "B. The relevant market consists solely of the "
-                        "banana market, which is sufficiently homogeneous "
-                        "and distinct from the market of other fresh fruit.",
+                        "B. A separate banana market, sufficiently "
+                        "homogeneous and distinct from other fresh fruit.",
                         12,
                     ),
                 ],
@@ -151,7 +150,10 @@ STEPS = [
     # Step 3: [13]–[21]
     {
         "title": "The parties' positions",
-        "teaser": "Both sides used the same sales data — and read it differently.",
+        "teaser": (
+            "The Commission drew the opposite conclusion from the studies "
+            "the applicant quoted."
+        ),
         "blocks": [
             {
                 "type": "side_by_side",
@@ -160,38 +162,45 @@ STEPS = [
                         "label": "The applicant: one fresh fruit market",
                         "bullets": [
                             cite(
-                                "Bananas compete with other fruit: same "
-                                "shops, same shelves, comparable prices, "
+                                "Bananas compete with other fresh fruit: "
+                                "same shops, same shelves, comparable prices, "
                                 "eaten as a dessert or between meals.",
                                 13,
                             ),
                             cite(
-                                "When other fruit is in season, banana "
-                                "prices and sales drop.",
+                                "It relied on statistics and FAO studies "
+                                "showing that banana spending and prices are "
+                                "lower when other fresh fruit is plentiful.",
                                 14, 17,
                             ),
-                            cite("So bananas belong to one fresh fruit market.", 18),
+                            cite(
+                                "It concluded that bananas and other fresh "
+                                "fruit form only one market.",
+                                18,
+                            ),
                         ],
                     },
                     {
                         "label": "The Commission: a distinct banana market",
                         "bullets": [
                             cite(
-                                "Bananas are a very important part of some "
-                                "people's diet, so demand for them is "
-                                "distinct.",
+                                "Demand for bananas is distinct, especially "
+                                "as they are a very important part of the "
+                                "diet of certain sections of the community.",
                                 19,
                             ),
                             cite(
-                                "Because of the banana's specific qualities, "
-                                "customers do not readily accept other fruit "
+                                "The banana's specific qualities induce "
+                                "customers not to readily accept other fruit "
                                 "as a substitute.",
                                 20,
                             ),
                             cite(
-                                "The applicant's own data show the effect of "
-                                "other fruit is very ineffective, too brief "
-                                "and too spasmodic.",
+                                "From the studies quoted by the applicant, it "
+                                "concluded that other fruit influences banana "
+                                "prices and availability only very "
+                                "ineffectively, and too briefly and too "
+                                "spasmodically for a single market.",
                                 21,
                             ),
                         ],
@@ -229,7 +238,7 @@ STEPS = [
         ),
     },
 
-    # Step 5: [27]–[29], [31], [35]
+    # Step 5: [27]–[29], [31], [34]–[35]
     # On screen, hidden until the reveal button is clicked; the summary
     # and the PDF always show it.
     {
@@ -239,10 +248,19 @@ STEPS = [
             {
                 "type": "box",
                 "label": "Conclusion",
-                "text": cite(
-                    "Bananas form a market of their own, sufficiently "
-                    "distinct from other fresh fruit.",
-                    35,
+                "text": (
+                    cite(
+                        "A very large number of consumers with a constant "
+                        "need for bananas are not noticeably or even "
+                        "appreciably enticed away by other fresh fruit.",
+                        34,
+                    )
+                    + " "
+                    + cite(
+                        "The banana market is sufficiently distinct from "
+                        "the other fresh fruit markets.",
+                        35,
+                    )
                 ),
             },
             {"type": "label", "text": "Why the Court decided this"},
@@ -252,28 +270,30 @@ STEPS = [
                     (
                         "All year round:",
                         cite(
-                            "bananas are always available, so the Court "
-                            "judged substitution over the whole year, not "
-                            "season by season.",
+                            "bananas are always available in sufficient "
+                            "quantities, so substitutability is assessed "
+                            "over the whole year, not season by season.",
                             27,
                         ),
                     ),
                     (
-                        "Little competition:",
+                        "Little substitution:",
                         cite(
-                            "only peaches and table grapes compete, and only "
-                            "seasonally in West Germany. Oranges don't "
-                            "compete, and apples only to a relative degree.",
+                            "the studies on the Court's file show seasonal "
+                            "substitutability only with peaches and table "
+                            "grapes, in West Germany. Oranges are not "
+                            "interchangeable with bananas, and apples only "
+                            "to a relative degree.",
                             28, 29,
                         ),
                     ),
                     (
-                        "Special qualities:",
+                        "Special features:",
                         cite(
                             "appearance, taste, softness, seedlessness, easy "
-                            "handling and a constant level of production meet "
-                            "the constant needs of the very young, the old "
-                            "and the sick.",
+                            "handling and a constant level of production "
+                            "enable bananas to satisfy the constant needs of "
+                            "the very young, the old and the sick.",
                             31,
                         ),
                     ),

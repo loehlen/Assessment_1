@@ -47,6 +47,7 @@ from shared import (
     CHUNKS_FOLDER,
     COVERED_PARAGRAPHS,
     COVERED_PINPOINT,
+    HOME_PAGE,
     SUBHEADING_PATTERNS,
     aglc_pinpoint,
     chunk_html,
@@ -97,6 +98,16 @@ WELCOME_MESSAGE = (
     "Hi! I'm here to help you explore how the Court defined the relevant "
     f"product market in *United Brands*. Ask me anything about paragraphs "
     f"{COVERED_PINPOINT}, or pick a question below to get started."
+)
+
+# Shown in the chatbot's bubble while a question is searched and answered
+THINKING_HTML = (
+    '<div class="thinking">'
+    '<span class="thinking-dot"></span>'
+    '<span class="thinking-dot"></span>'
+    '<span class="thinking-dot"></span>'
+    '<span class="thinking-text">Reading the judgment…</span>'
+    "</div>"
 )
 
 # First visit only: a short pause, the welcome types itself out, then the
@@ -323,6 +334,12 @@ Answering
   whole judgment. Never conclude from a missing passage that the Court
   or the judgment did not decide, say or address something; only a
   retrieved paragraph that states the opposite can show that.
+- The chatbot covers only the relevant product market. If a question
+  is about something outside it (e.g. the geographic market or
+  whether there was an abuse), report what the retrieved paragraphs
+  say that bears on it, with citations, then say in one sentence that
+  the rest is outside this chatbot's scope. Never answer from outside
+  knowledge.
 - If the question asks about several things and the passages cover
   only some of them, answer those and name the part that isn't
   covered in one closing sentence. Add no such sentence when the
@@ -330,12 +347,6 @@ Answering
   all, reply only, once: "{NOT_ADDRESSED_REPLY}"
 - Ask for clarification only if the question could refer to more than
   one point in the paragraphs.
-- The chatbot covers only the relevant product market. If a question
-  is about something outside it (e.g. the geographic market or
-  whether there was an abuse), report what the retrieved paragraphs
-  say that bears on it, with citations, then say in one sentence that
-  the rest is outside this chatbot's scope. Never answer from outside
-  knowledge.
 
 Format
 - Lead with the direct answer. Plain prose, no headings, bullets or
@@ -515,7 +526,7 @@ UNATTRIBUTED_OPENERS = {
 
 CITATION_PATTERN = re.compile(r"\[\d+\]")
 SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
-NOT_COVERED_PATTERN = re.compile(r"\b(address|cover)", re.IGNORECASE)
+NOT_COVERED_PATTERN = re.compile(r"\b(address|cover|scope)", re.IGNORECASE)
 
 
 def contains(phrase, text):
@@ -686,7 +697,11 @@ def generate_answer(history, context, question_block, source_text):
 
 def answer_question(query):
     """One question, start to finish: show it, search, answer, show
-    the answer and store both in the conversation."""
+    the answer and store both in the conversation.
+
+    The chatbot's bubble appears straight away with a quiet "thinking"
+    indicator, which the answer replaces when it is ready; the answer
+    then fades in (CSS: .st-key-new_answer)."""
     st.session_state.messages.append({"role": "user", "content": query})
     with st.chat_message("user", avatar=USER_AVATAR):
         st.write(query)
@@ -697,32 +712,35 @@ def answer_question(query):
         for m in st.session_state.messages[-6:-1]
     ]
 
-    with st.spinner("Understanding your question…"):
-        search_query, was_rewritten = make_search_query(query, history)
-
-    try:
-        sources = retrieve_sources(search_query)
-    except Exception:
-        with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-            st.error("Something went wrong retrieving relevant passages. Please try asking again.")
-        st.stop()
-
-    shown_query = search_query if was_rewritten else None
-    context = "\n\n---\n\n".join(chunk_for_model(s) for s in sources)
-    source_text = "\n".join(s["doc"] for s in sources)
-    question_block = query
-    if was_rewritten:
-        question_block += f"\n\nInterpreted as: {search_query}"
-
     with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+        waiting = st.empty()
+        with waiting.container():
+            render_html(THINKING_HTML)
+
         try:
-            with st.spinner("Reading the paragraphs…"):
-                answer, issues = generate_answer(history, context, question_block, source_text)
+            search_query, was_rewritten = make_search_query(query, history)
+            sources = retrieve_sources(search_query)
+        except Exception:
+            waiting.error("Something went wrong retrieving relevant passages. Please try asking again.")
+            st.stop()
+
+        shown_query = search_query if was_rewritten else None
+        context = "\n\n---\n\n".join(chunk_for_model(s) for s in sources)
+        source_text = "\n".join(s["doc"] for s in sources)
+        question_block = query
+        if was_rewritten:
+            question_block += f"\n\nInterpreted as: {search_query}"
+
+        try:
+            answer, issues = generate_answer(history, context, question_block, source_text)
+        except Exception:
+            waiting.error("Something went wrong generating a response. Please try again in a moment.")
+            st.stop()
+
+        waiting.empty()
+        with st.container(key="new_answer"):
             render_answer(answer, sources)
             render_sources(sources, shown_query, issues)
-        except Exception:
-            st.error("Something went wrong generating a response. Please try again in a moment.")
-            st.stop()
 
     st.session_state.messages.append(
         {
@@ -843,6 +861,12 @@ def show_past_message(message):
             st.write(message["content"])
 
 
+def back_to_intro_link():
+    """Small link back to the introduction, under the page title."""
+    with st.container(key="back_link"):
+        st.page_link(HOME_PAGE, label="← Back to the introduction")
+
+
 def type_out(text):
     """Yield the text word by word, so st.write_stream 'types' it."""
     for word in text.split(" "):
@@ -913,8 +937,10 @@ top = st.empty()
 with top.container():
     if st.session_state.messages or query:
         compact_header(CHATBOT_SUBTITLE)
+        back_to_intro_link()
     else:
         page_header(CHATBOT_SUBTITLE)
+        back_to_intro_link()
         show_welcome()
 
 for message in st.session_state.messages:
