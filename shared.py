@@ -163,13 +163,19 @@ def require_password(subtitle=None):
     app for the session.
 
     The placeholder is created on every run, even once unlocked, so the
-    old password screen is wiped at once instead of lingering."""
+    old password screen is wiped at once instead of lingering.
+
+    The screen sits in one keyed container, which stays invisible for a
+    moment and then fades in as a whole (CSS: st-key-password_screen),
+    so its pieces don't pop in one after another while the page sets
+    up. A wrong password redraws the same container, so the fade
+    doesn't replay."""
     gate = st.empty()
 
     if st.session_state.get("authenticated"):
         return
 
-    with gate.container():
+    with gate.container(key="password_screen"):
         app_title()
         if subtitle:
             app_subtitle(subtitle)
@@ -1099,11 +1105,13 @@ div[class*="st-key-answer_"] {
     to { opacity: 1; transform: none; }
 }
 
-/* The welcome screen (first visit and after a reset) stays invisible
-   for a moment and then fades in as a whole. Streamlit sends the page
-   piece by piece, so on a slower connection the title, the welcome and
-   the buttons would otherwise appear one after another; the short
-   wait ("both" keeps it hidden meanwhile) lets them arrive first. */
+/* The password screen and the chatbot's welcome screen (first visit
+   and after a reset) stay invisible for a moment and then fade in as
+   a whole. Streamlit sends the page piece by piece, so on a slower
+   connection the title, the text and the field or buttons would
+   otherwise appear one after another; the short wait ("both" keeps
+   them hidden meanwhile) lets them arrive first. */
+.st-key-password_screen,
 .st-key-welcome_screen {
     animation: soft-fade-in 0.3s ease-out 0.15s both;
 }
@@ -1124,6 +1132,7 @@ div[class*="st-key-answer_"] {
 @media (prefers-reduced-motion: reduce) {
     .thinking-dot,
     div[class*="st-key-answer_"],
+    .st-key-password_screen,
     .st-key-welcome_screen,
     div[class*="st-key-stepa_"],
     div[class*="st-key-stepb_"],
