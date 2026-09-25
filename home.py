@@ -659,33 +659,20 @@ def pdf_download_button(key):
 # 6. Page flow
 #
 # The main area has three fixed slots, in the same place on every
-# screen, so each one is replaced cleanly when the step changes:
-#   1. the title and subtitle
-#   2. the progress area: divider, step indicator, progress bar and
-#      skip button (empty on the welcome screen)
-#   3. the stage: the step's content and the navigation buttons
-#
-# When the step changes, the stage is wiped before the new step is
-# drawn (as the chatbot page does after a reset). Otherwise Streamlit
-# would redraw the old step in place, and anything the new step
-# doesn't have would stay on screen until the run ends. The new step
-# then fades in on a clean slate.
+# screen: the title, the progress area (empty on the welcome screen)
+# and the stage (the step's content and the navigation buttons). When
+# the step changes, Streamlit swaps the new step into the same slots
+# in place, so the change is instant, with no blank moment in between.
+# (Wiping the old step first and fading the new one in made the page
+# flicker.)
 #
 # The page scrolls to the top the moment a navigation button is
-# clicked, before Streamlit starts redrawing, so a tall step (such as
-# step 2) doesn't leave the next one half-scrolled and the page doesn't
-# jump while the new step fades in. Clicks within a step (the guess,
-# the reveal, an expander) don't wipe, replay or scroll anything.
+# clicked, before Streamlit redraws, so a tall step (such as step 2)
+# doesn't leave the next one half-scrolled.
 # ==================================================
 
 # Step 0 is the welcome screen; steps 1 to TOTAL_STEPS are the intro
-init_state(
-    intro_step=0,
-    shown_step=None,       # the step drawn on the previous run
-    market_guess=None,
-    answer_revealed=False,
-    celebrate=False,
-)
+init_state(intro_step=0, market_guess=None, answer_revealed=False, celebrate=False)
 
 # Buttons that change the step (their keys are set in show_welcome and
 # show_navigation); clicking one scrolls the page to the top
@@ -694,15 +681,14 @@ NAVIGATION_BUTTONS = ".st-key-start_intro, .st-key-nav_next, .st-key-nav_back"
 # Scrolling to the top. Streamlit has no built-in way to do this, so a
 # tiny invisible frame adds a small script to the page, once:
 #   - it scrolls to the top as soon as a navigation button is clicked,
-#     before Streamlit redraws, so the new step appears without a jump
-#   - it provides introScrollToTop(), which the frame also calls when a
-#     step first appears, as a backup (e.g. when arriving from the
-#     chatbot page); after a click there's nothing left for it to do
-# The script is added to the page itself, not kept in the frame,
-# because the frame is replaced on every step. The page scrolls in a
-# different element depending on the Streamlit version, so all the
-# likely ones are tried. If the page doesn't accept the added script,
-# the frame scrolls the page itself.
+#     before Streamlit redraws
+#   - it provides introScrollToTop(), which the frame also calls when
+#     the page opens (e.g. when arriving from the chatbot page)
+# The script is added to the page itself rather than kept in the
+# frame, so it keeps working whatever happens to the frame. The page
+# scrolls in a different element depending on the Streamlit version,
+# so all the likely ones are tried. If the page doesn't accept the
+# added script, the frame scrolls the page itself.
 SCROLL_SCRIPT = """
 <script>
 const page = window.parent.document;
@@ -748,11 +734,13 @@ if (window.parent.introScrollToTop) {
 """.replace("NAVIGATION_BUTTONS", NAVIGATION_BUTTONS)
 
 
-def scroll_to_top(step):
-    """The invisible scroll frame (see SCROLL_SCRIPT). The step number
-    makes the frame new for every step, so its script runs again when
-    the step changes, but not on clicks within a step."""
-    components.html(f"<!-- step {step} -->{SCROLL_SCRIPT}", height=0)
+def install_scroll_helper():
+    """The invisible frame that adds the scroll script (see
+    SCROLL_SCRIPT). It sits at the bottom of the sidebar, which looks
+    the same on every screen of this page, so the frame loads once when
+    the page opens and isn't rebuilt on every click."""
+    with st.sidebar:
+        components.html(SCROLL_SCRIPT, height=0)
 
 
 def go_to_step(target):
@@ -761,20 +749,9 @@ def go_to_step(target):
     st.session_state.intro_step = min(max(target, 0), TOTAL_STEPS)
 
 
-def step_container(stage, step):
-    """The container for one step's content (step 0 is the welcome),
-    drawn into the stage, so it fades in when the step changes (CSS:
-    st-key-stepa_ and st-key-stepb_). Neighbouring steps take turns
-    between "a" and "b", so the animation changes with every step and
-    the fade plays even if the browser reuses the element. Within a
-    step the key stays the same, so clicking a guess or an expander
-    doesn't replay it."""
-    parity = "a" if step % 2 else "b"
-    return stage.container(key=f"step{parity}_{step}")
-
-
 def show_sidebar():
-    """Page links, the PDF download and the judgment pop-up."""
+    """Page links, the PDF download and the judgment pop-up, with the
+    invisible scroll helper at the very bottom."""
     sidebar_nav()
 
     sidebar_label("The introduction")
@@ -783,6 +760,7 @@ def show_sidebar():
         st.caption("The whole introduction in one document, with paragraph citations.")
 
     judgment_sidebar_section()
+    install_scroll_helper()
 
 
 def show_welcome():
@@ -917,27 +895,19 @@ show_sidebar()
 
 # The three slots (see the note at the top of this section)
 page_header(INTRO_SUBTITLE)
-progress_area = st.empty()
-stage = st.empty()
-
-# A new step: wipe the old one before drawing, so it vanishes at once
-if st.session_state.shown_step != step:
-    stage.empty()
-    st.session_state.shown_step = step
+progress_area = st.container()
+stage = st.container()
 
 if step == 0:
-    progress_area.empty()
-    with step_container(stage, 0):
+    with stage:
         show_welcome()
-        scroll_to_top(0)
     st.stop()  # nothing below runs on the welcome screen
 
 current = STEPS[step - 1]
 
-with progress_area.container():
+with progress_area:
     show_progress(step, current)
 
-with step_container(stage, step):
+with stage:
     show_current_step(step, current)
     show_navigation(step)
-    scroll_to_top(step)

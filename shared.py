@@ -682,28 +682,6 @@ a[data-testid="stPageLink-NavLink"][aria-current="page"] p {
     transition: width 0.4s ease;
 }
 
-/* Each intro step fades in (and rises slightly) when it opens.
-   Neighbouring steps take turns between two identical animations
-   (home.py: step_container), so the fade replays on every step
-   change; clicks within a step don't replay it. */
-div[class*="st-key-stepa_"] {
-    animation: step-in-a 0.35s ease-out;
-}
-
-div[class*="st-key-stepb_"] {
-    animation: step-in-b 0.35s ease-out;
-}
-
-@keyframes step-in-a {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: none; }
-}
-
-@keyframes step-in-b {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: none; }
-}
-
 /* The Court's answer fades in when revealed (opacity only: a moving
    container would throw off the balloons) */
 .st-key-revealed {
@@ -1162,8 +1140,6 @@ div[class*="st-key-answer_"] {
     div[class*="st-key-answer_"],
     .st-key-password_screen,
     .st-key-welcome_screen,
-    div[class*="st-key-stepa_"],
-    div[class*="st-key-stepb_"],
     .st-key-revealed {
         animation: none;
     }
