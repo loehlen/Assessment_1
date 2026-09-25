@@ -436,17 +436,22 @@ def reveal_section():
     if guess:
         teaser(f"You guessed: <em>{guess[3:].lower()}</em>.")
 
-    if not st.session_state.answer_revealed:
-        label = "Find out if you were right →" if guess else "Reveal the Court's answer →"
-        st.button(label, on_click=reveal_answer, type="primary", key="reveal")
-        return False
+    if st.session_state.answer_revealed:
+        return True
+
+    label = "Find out if you were right →" if guess else "Reveal the Court's answer →"
+    st.button(label, on_click=reveal_answer, type="primary", key="reveal")
+    return False
+
+
+def reveal_verdict():
+    """Whether the guess was right (nothing if there was no guess)."""
+    guess = st.session_state.market_guess
 
     if guess == CORRECT_GUESS:
         teaser(f'{banana("inline-icon")}<strong>Correct! Bananas are a market of their own.</strong>')
     elif guess:
         teaser("<strong>Not quite. The Court went the other way.</strong>")
-
-    return True
 
 
 def celebrate_if_due():
@@ -628,6 +633,10 @@ def pdf_download_button(key):
 
 # ==================================================
 # 6. Page flow
+#
+# The title, progress bar and navigation buttons stay in place; only
+# the step's content (in step_container) fades in when the step
+# changes, and the Court's answer fades in when revealed.
 # ==================================================
 
 # Step 0 is the welcome screen; steps 1 to TOTAL_STEPS are the intro
@@ -640,6 +649,17 @@ def go_next():
 
 def go_back():
     st.session_state.intro_step = max(st.session_state.intro_step - 1, 0)
+
+
+def step_container(step):
+    """A container for one step's content (step 0 is the welcome), so
+    it fades in when the step changes (CSS: st-key-stepa_ and
+    st-key-stepb_). Neighbouring steps take turns between "a" and "b":
+    each step change swaps the animation, so the fade plays even if
+    Streamlit reuses the element. Within a step the key stays the same,
+    so clicking a guess or an expander doesn't replay it."""
+    parity = "a" if step % 2 else "b"
+    return st.container(key=f"step{parity}_{step}")
 
 
 def show_sidebar():
@@ -656,76 +676,78 @@ def show_sidebar():
 
 def show_welcome():
     page_header(INTRO_SUBTITLE)
-    teaser(
-        "Welcome! This chatbot covers an absolute classic of European "
-        "competition law: how the European Court of Justice decided "
-        "whether bananas form a market of their own.",
-        "Before we get into the chatbot, let's first explore what the "
-        "case is about.",
-        align_left=True,
-    )
-    st.caption(f"{TOTAL_STEPS} short steps · about 3 minutes")
 
-    st.write("")
-    # Skip on the left, the main action on the right
-    skip_col, _, start_col = st.columns([1.2, 1.6, 1.6])
-    with skip_col:
-        if st.button("Skip to the chatbot", key="skip_welcome", use_container_width=True):
-            go_to_chatbot()
-    with start_col:
-        st.button(
-            "Let's explore the case →",
-            on_click=go_next,
-            type="primary",
-            use_container_width=True,
+    with step_container(0):
+        teaser(
+            "Welcome! This chatbot covers an absolute classic of European "
+            "competition law: how the European Court of Justice decided "
+            "whether bananas form a market of their own.",
+            "Before we get into the chatbot, let's first explore what the "
+            "case is about.",
+            align_left=True,
         )
+        st.caption(f"{TOTAL_STEPS} short steps · about 3 minutes")
+
+        st.write("")
+        # Skip on the left, the main action on the right
+        skip_col, _, start_col = st.columns([1.2, 1.6, 1.6])
+        with skip_col:
+            if st.button("Skip to the chatbot", key="skip_welcome", use_container_width=True):
+                go_to_chatbot()
+        with start_col:
+            st.button(
+                "Let's explore the case →",
+                on_click=go_next,
+                type="primary",
+                use_container_width=True,
+            )
 
 
 def show_progress(step, current):
-    """Title, step indicator and progress bar (with a skip button
-    until the last step)."""
+    """Title, step indicator and progress bar, with a skip button until
+    the last step. The skip button's column stays on the last step
+    (empty), so the bar keeps its width and just fills up."""
     page_header(INTRO_SUBTITLE)
     st.divider()
     render_html(
         f'<div class="step-indicator">Step {step} of {TOTAL_STEPS} · {current["title"]}</div>'
     )
 
+    progress_col, skip_col = st.columns([5, 1])
+    with progress_col:
+        progress_bar(step / TOTAL_STEPS)
     if step < TOTAL_STEPS:
-        progress_col, skip_col = st.columns([5, 1])
-        with progress_col:
-            progress_bar(step / TOTAL_STEPS)
         with skip_col:
             if st.button("Skip intro →", key="skip_intro", use_container_width=True):
                 go_to_chatbot()
-    else:
-        progress_bar(1.0)
 
 
 def show_current_step(step, current):
-    """The step's content. On the last step, the Court's answer stays
-    hidden until revealed. Returns True once the content is visible."""
+    """The step's content. On the last step, the Court's answer, the
+    Ask button and the summary stay hidden until revealed, then fade in
+    together (CSS: st-key-revealed)."""
     st.header(current["title"])
-    revealed = True
 
-    if step == TOTAL_STEPS:
-        if current.get("teaser"):
-            teaser(current["teaser"])
-        revealed = reveal_section()
-        if revealed:
-            for block in current["blocks"]:
-                render_block(block)
-            celebrate_if_due()
-    else:
+    if step < TOTAL_STEPS:
         render_step(current)
-
-    if step == GUESS_STEP:
-        st.write("")
-        guess_question()
-
-    if revealed:
+        if step == GUESS_STEP:
+            st.write("")
+            guess_question()
         ask_button(current)
+        return
 
-    return revealed
+    if current.get("teaser"):
+        teaser(current["teaser"])
+    if not reveal_section():
+        return
+
+    with st.container(key="revealed"):
+        reveal_verdict()
+        for block in current["blocks"]:
+            render_block(block)
+        celebrate_if_due()
+        ask_button(current)
+        show_summary_and_pdf()
 
 
 def show_summary_and_pdf():
@@ -773,9 +795,6 @@ if step == 0:
 current = STEPS[step - 1]
 
 show_progress(step, current)
-revealed = show_current_step(step, current)
-
-if step == TOTAL_STEPS and revealed:
-    show_summary_and_pdf()
-
+with step_container(step):
+    show_current_step(step, current)
 show_navigation(step)
