@@ -241,12 +241,12 @@ def compact_header(subtitle):
     )
 
 
-def case_card(excerpt_label="This excerpt"):
+def case_card():
     render_html(
         f"""
         <div class="case-card">
             <div class="case-row"><span class="case-label">Case</span><span>{CASE_CITATION}</span></div>
-            <div class="case-row"><span class="case-label">{excerpt_label}</span><span>{EXCERPT}</span></div>
+            <div class="case-row"><span class="case-label">This excerpt</span><span>{EXCERPT}</span></div>
         </div>
         """
     )
@@ -306,6 +306,13 @@ def subheading_pattern(heading):
 SUBHEADING_PATTERNS = [subheading_pattern(h) for h in JUDGMENT_SUBHEADINGS.values()]
 
 
+def clean_paragraph(body):
+    """One paragraph's text on a single line, without any subheading."""
+    for pattern in SUBHEADING_PATTERNS:
+        body = pattern.sub(" ", body)
+    return one_line(body)
+
+
 @st.cache_data(show_spinner=False)
 def load_judgment_paragraphs():
     """{paragraph number: text} from all chunk files, in order."""
@@ -318,9 +325,7 @@ def load_judgment_paragraphs():
     for file in sorted(folder.glob("*.txt")):
         _, pairs = split_paragraphs(file.read_text(encoding="utf-8", errors="ignore"))
         for number, body in pairs:
-            for pattern in SUBHEADING_PATTERNS:
-                body = pattern.sub(" ", body)
-            paragraphs[int(number)] = one_line(body)
+            paragraphs[int(number)] = clean_paragraph(body)
 
     return dict(sorted(paragraphs.items()))
 
@@ -522,10 +527,8 @@ div.stDownloadButton button:hover {
 /* Pressed / focused buttons keep the subtle tint */
 div.stButton button:not([kind="primary"]):active,
 div.stButton button:not([kind="primary"]):focus,
-div.stButton button:not([kind="primary"]):focus-visible,
 div.stDownloadButton button:active,
-div.stDownloadButton button:focus,
-div.stDownloadButton button:focus-visible {
+div.stDownloadButton button:focus {
     border-color: var(--border-hover) !important;
     background-color: var(--tint) !important;
     color: var(--text) !important;
@@ -826,7 +829,6 @@ div[data-testid="stChatMessage"] div[data-testid="stExpander"] summary p {
 }
 
 .cite:hover .cite-pop,
-.cite:focus .cite-pop,
 .cite:focus-within .cite-pop {
     display: block;
 }

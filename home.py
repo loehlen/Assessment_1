@@ -83,7 +83,7 @@ PDF_FILE_NAME = "United_Brands_relevant_product_market_introduction.pdf"
 #   label         a small bold heading
 #   points        bullet points, each (bold lead, text)
 #   details       click-to-open section: label, then "paragraphs"
-#                 and/or "intro" + "bullets"
+#                 and/or "bullets"
 #   side_by_side  two click-to-open sections next to each other
 #
 # Like the chatbot's answers, every sentence reporting the judgment
@@ -322,8 +322,6 @@ def render_details(item, compact):
     def body():
         for paragraph in item.get("paragraphs", []):
             st.write(paragraph)
-        if item.get("intro"):
-            st.write(item["intro"])
         if item.get("bullets"):
             st.markdown(bullet_list(item["bullets"]))
 
@@ -526,8 +524,6 @@ def pdf_bullets(paragraphs):
 def pdf_details(item):
     flowables = [pdf_text(item["label"], "label")]
     flowables += [pdf_text(paragraph) for paragraph in item.get("paragraphs", [])]
-    if item.get("intro"):
-        flowables.append(pdf_text(item["intro"]))
     if item.get("bullets"):
         flowables.append(pdf_bullets([pdf_text(b) for b in item["bullets"]]))
     return pdf_panel(flowables, PDF_CARD)

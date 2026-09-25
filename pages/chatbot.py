@@ -48,9 +48,9 @@ from shared import (
     CHUNKS_FOLDER,
     COVERED_PARAGRAPHS,
     COVERED_PINPOINT,
-    SUBHEADING_PATTERNS,
     aglc_pinpoint,
     chunk_html,
+    clean_paragraph,
     compact_header,
     html_safe,
     init_state,
@@ -73,9 +73,6 @@ from shared import (
 
 # Same password as home.py: entering it once unlocks both pages
 setup_page(f"{CASE_TITLE} — Chatbot", password_subtitle=CHATBOT_SUBTITLE)
-
-# The user has no avatar: their questions are pink bubbles instead
-USER_AVATAR = None
 
 N_RESULTS = 3              # chunks passed to the model per question
 RRF_K = 60                 # reciprocal rank fusion constant (standard value)
@@ -190,29 +187,16 @@ PARAGRAPH_COLLECTION = "united_brands_paragraphs"
 def chunk_metadata(file_name):
     """Paragraph range, speaker and note for a chunk, from CHUNKS."""
     info = CHUNKS.get(file_name)
-
-    if info:
-        paragraphs = aglc_pinpoint(*info["paragraphs"])
-        speaker = info["speaker"]
-        note = info.get("note", "")
-    else:
-        paragraphs, speaker, note = "", "", ""
+    if not info:
         st.warning(f"No entry for {file_name} in CHUNKS — add its paragraph range and speaker.")
+        info = {}
 
     return {
-        "source": CASE_NAME,
         "filename": file_name,
-        "paragraphs": paragraphs,
-        "speaker": speaker,
-        "note": note,
+        "paragraphs": aglc_pinpoint(*info["paragraphs"]) if info else "",
+        "speaker": info.get("speaker", ""),
+        "note": info.get("note", ""),
     }
-
-
-def clean_paragraph(body):
-    """One paragraph's text on a single line, without any subheading."""
-    for pattern in SUBHEADING_PATTERNS:
-        body = pattern.sub(" ", body)
-    return one_line(body)
 
 
 # show_spinner=False: a friendlier spinner is shown below instead
@@ -663,18 +647,19 @@ def retrieve_sources(search_query):
         key=lambda name: (-scores[name], position(chunk_order, name) or 99),
     )
 
-    return [
-        {
-            "paragraphs": chunks[name].get("paragraphs"),
-            "speaker": chunks[name].get("speaker"),
-            "note": chunks[name].get("note"),
-            "doc": chunks[name]["doc"],
+    sources = []
+    for name in ranked[:N_RESULTS]:
+        chunk = chunks[name]
+        sources.append({
+            "paragraphs": chunk.get("paragraphs"),
+            "speaker": chunk.get("speaker"),
+            "note": chunk.get("note"),
+            "doc": chunk["doc"],
             "chunk_rank": position(chunk_order, name),
             "paragraph_rank": position(paragraph_order, name),
             "matched": aglc_pinpoint(best[name]) if name in best else None,
-        }
-        for name in ranked[:N_RESULTS]
-    ]
+        })
+    return sources
 
 
 def chunk_for_model(source):
@@ -711,7 +696,8 @@ def answer_question(query):
     in that same placeholder, built exactly as show_past_message builds
     it later, so nothing jumps or re-renders on the next click."""
     st.session_state.messages.append({"role": "user", "content": query})
-    with st.chat_message("user", avatar=USER_AVATAR):
+    # No avatar for the user: their questions are pink bubbles instead
+    with st.chat_message("user"):
         st.write(query)
 
     # Recent history, without the question just asked or extra keys
@@ -793,7 +779,7 @@ def render_answer(answer, sources):
         first = int(match.group(1))
         last = int(match.group(2) or first)
         punctuation = match.group(3)
-        pinpoint = match.group(0)[: len(match.group(0)) - len(punctuation)]
+        pinpoint = match.group(0).removesuffix(punctuation)
 
         numbers = [n for n in range(first, last + 1) if n in texts]
         if not numbers:
@@ -872,7 +858,7 @@ def show_answer(index, answer, sources, search_query=None, issues=None, target=N
 
 def show_past_message(index, message):
     """Replay one stored message, with citation labels and sources."""
-    avatar = USER_AVATAR if message["role"] == "user" else ASSISTANT_AVATAR
+    avatar = ASSISTANT_AVATAR if message["role"] == "assistant" else None
 
     with st.chat_message(message["role"], avatar=avatar):
         if message["role"] == "assistant" and message.get("sources"):
